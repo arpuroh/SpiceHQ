@@ -52,6 +52,12 @@ body {
   background: rgba(255,255,255,0.03);
 }
 
+.navLinkActive {
+  border-color: rgba(125, 211, 252, 0.35);
+  color: var(--text);
+  background: rgba(125, 211, 252, 0.08);
+}
+
 .sidebarFooter {
   margin-top: auto;
   line-height: 1.5;
@@ -220,6 +226,62 @@ body {
   color: #fecaca;
 }
 
+.successBanner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: rgba(5, 150, 105, 0.18);
+  color: #bbf7d0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.formGrid2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: var(--text);
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid rgba(125, 211, 252, 0.25);
+  outline-offset: 0;
+  border-color: rgba(125, 211, 252, 0.45);
+}
+
 @media (max-width: 900px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -230,6 +292,9 @@ body {
     border-bottom: 1px solid var(--line);
   }
   .grid-4, .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .formGrid2 {
     grid-template-columns: 1fr;
   }
   .hero h1 {

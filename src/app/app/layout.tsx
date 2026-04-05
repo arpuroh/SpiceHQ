@@ -1,10 +1,5 @@
-import Link from 'next/link';
 import { requireAllowedUser } from '@/lib/auth';
-
-const nav = [
-  { href: '/app', label: 'Overview' },
-  { href: '/app/fundraising', label: 'Fundraising' }
-];
+import { AppNav } from '@/components/app-nav';
 
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const { email } = await requireAllowedUser();
@@ -17,13 +12,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
           <div className="subtle" style={{ marginTop: 6 }}>Fund III operating system</div>
         </div>
 
-        <nav className="sidebarNav">
-          {nav.map((item) => (
-            <Link key={item.href} href={item.href} className="navLink">
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <AppNav />
 
         <div className="sidebarFooter subtle">
           Signed in as<br />

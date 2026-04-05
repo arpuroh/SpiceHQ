@@ -7,7 +7,8 @@ Spice HQ is the internal CRM and operating system for Spice Capital.
 - Google sign-in via Supabase
 - MVP allowlist for `arpuroh@gmail.com`
 - Fund III dashboard shell
-- CRM scaffolding for pipeline, relationships, interactions, and automation
+- Live fundraising, contacts, and interactions views from Supabase
+- Minimal add-person and add-organization flows writing back to Supabase
 - Documentation for data model, architecture, and migration
 
 ## Local development
@@ -25,6 +26,7 @@ Copy `.env.example` to `.env.local` and set:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY` for server-side write flows
 
 ## Auth wiring
 
