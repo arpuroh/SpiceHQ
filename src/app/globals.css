@@ -17,6 +17,50 @@ body {
   min-height: 100vh;
 }
 
+.appShell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: #0a0f1a;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sidebarNav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.navLink {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: var(--muted);
+}
+
+.navLink:hover {
+  border-color: var(--line);
+  color: var(--text);
+  background: rgba(255,255,255,0.03);
+}
+
+.sidebarFooter {
+  margin-top: auto;
+  line-height: 1.5;
+}
+
+.mainContent {
+  min-width: 0;
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -157,7 +201,34 @@ body {
   letter-spacing: .08em;
 }
 
+.tableWrap {
+  overflow: auto;
+}
+
+.tableSubtle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.errorBanner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #6b2737;
+  background: rgba(153, 27, 27, 0.2);
+  color: #fecaca;
+}
+
 @media (max-width: 900px) {
+  .appShell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
   .grid-4, .grid-2 {
     grid-template-columns: 1fr;
   }

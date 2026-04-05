@@ -1,0 +1,81 @@
+{
+  "base_id": "appX8dLK2sSUhqa2d",
+  "table_name": "Contacts",
+  "record_count": 34,
+  "field_count": 9,
+  "fields": [
+    "1st Degree Interactions",
+    "2nd Degree Interactions",
+    "Connection Degree to Firm",
+    "Investor Title",
+    "Investor/Firm",
+    "LinkedIn",
+    "Name",
+    "Name (Connection)",
+    "Notes"
+  ],
+  "raw_path": "/Users/MA/.openclaw/workspace/projects/SpiceHQ/data/imports/airtable/fundraising_crm_database/contacts.raw.json",
+  "csv_path": "/Users/MA/.openclaw/workspace/projects/SpiceHQ/data/imports/airtable/fundraising_crm_database/contacts.csv",
+  "sample_records": [
+    {
+      "id": "rec1xdao2L0Op8yRn",
+      "createdTime": "2018-02-14T01:56:19.000Z",
+      "fields": {
+        "Name (Connection)": "[FAKE] Tugba Lisa (Angel)",
+        "LinkedIn": "[REDACTED]",
+        "Connection Degree to Firm": "1st",
+        "Name": "[FAKE] Tugba Lisa",
+        "Investor Title": "Angel",
+        "Investor/Firm": [
+          "recYlYqAivyuELxqf"
+        ],
+        "Notes": "Experienced financial professional. Very well connected in the automotive world."
+      }
+    },
+    {
+      "id": "rec46CWenucJXOLwV",
+      "createdTime": "2018-02-14T00:02:38.000Z",
+      "fields": {
+        "Name (Connection)": "[FAKE] Vibius Oriane (Principal)",
+        "LinkedIn": "[REDACTED]",
+        "Connection Degree to Firm": "1st",
+        "Name": "[FAKE] Vibius Oriane",
+        "Investor Title": "Principal",
+        "Investor/Firm": [
+          "recXGTpqkuP9BTESQ"
+        ],
+        "1st Degree Interactions": [
+          "recuZuo6E2Mo8JTQD"
+        ],
+        "Notes": "Up-and-coming finance executive specializing in automotive M&A."
+      }
+    },
+    {
+      "id": "rec4Ic3LebTkPSG9c",
+      "createdTime": "2018-02-14T00:11:07.000Z",
+      "fields": {
+        "Name (Connection)": "[FAKE] Bethney F\u00e1el\u00e1n (Angel)",
+        "LinkedIn": "[REDACTED]",
+        "Connection Degree to Firm": "1st",
+        "Name": "[FAKE] Bethney F\u00e1el\u00e1n",
+        "Investor Title": "Angel",
+        "Investor/Firm": [
+          "recHMQZRaIvfHe9jg"
+        ],
+        "1st Degree Interactions": [
+          "recIVT0VTc4CdZfBm",
+          "recZp7RJ8OBd1Wk4h",
+          "recA59l8FBcF1r9zx",
+          "recyhKjvDsFZvHnmk",
+          "rec99VwB4XAow0r9h",
+          "rec9Zq86KJyIN7dli",
+          "recg8rExY3vdcIwWg",
+          "reccvdr2StOoyW7Ot",
+          "recZM1QHMMaQh5EPw",
+          "recUS4IxP8vlNs9Ld"
+        ],
+        "Notes": "Multinational CFO."
+      }
+    }
+  ]
+}
