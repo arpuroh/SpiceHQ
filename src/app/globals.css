@@ -282,6 +282,20 @@ body {
   border-color: rgba(125, 211, 252, 0.45);
 }
 
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 900px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -299,5 +313,8 @@ body {
   }
   .hero h1 {
     font-size: 34px;
+  }
+  .panelHeader {
+    flex-direction: column;
   }
 }

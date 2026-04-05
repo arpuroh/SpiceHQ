@@ -51,6 +51,12 @@ export interface ContactPageData {
   organizationOptions: ContactOrganization[];
 }
 
+export interface ContactDetailData {
+  source: 'supabase' | 'empty';
+  row: ContactRow | null;
+  organizationOptions: ContactOrganization[];
+}
+
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
@@ -66,6 +72,38 @@ function normalizeContactRow(row: ContactQueryRow): ContactRow {
     }))
   };
 }
+
+const contactSelect = `
+  id,
+  full_name,
+  first_name,
+  last_name,
+  job_title,
+  email,
+  phone,
+  linkedin_url,
+  preferred_channel,
+  status,
+  notes,
+  created_at,
+  primary_organization:organizations!contacts_primary_organization_id_fkey (
+    id,
+    name,
+    organization_type,
+    headquarters
+  ),
+  organizations:contact_organizations (
+    is_primary,
+    relationship_type,
+    title,
+    organization:organizations!contact_organizations_organization_id_fkey (
+      id,
+      name,
+      organization_type,
+      headquarters
+    )
+  )
+`;
 
 export function formatDateTime(value: string | null): string {
   if (!value) return '—';
@@ -84,40 +122,7 @@ export async function getContactsPageData(supabase: SupabaseClient): Promise<Con
     await Promise.all([
       supabase
         .from('contacts')
-        .select(
-          `
-            id,
-            full_name,
-            first_name,
-            last_name,
-            job_title,
-            email,
-            phone,
-            linkedin_url,
-            preferred_channel,
-            status,
-            notes,
-            created_at,
-            primary_organization:organizations!contacts_primary_organization_id_fkey (
-              id,
-              name,
-              organization_type,
-              headquarters
-            ),
-            organizations:contact_organizations (
-              is_primary,
-              relationship_type,
-              title,
-              organization:organizations!contact_organizations_organization_id_fkey (
-                id,
-                name,
-                organization_type,
-                headquarters
-              )
-            )
-          `,
-          { count: 'exact' }
-        )
+        .select(contactSelect, { count: 'exact' })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(200),
       supabase
@@ -150,6 +155,32 @@ export async function getContactsPageData(supabase: SupabaseClient): Promise<Con
     withEmail: rows.filter((row) => row.email).length,
     recentlyAdded: rows.filter((row) => row.created_at && now - new Date(row.created_at).getTime() <= thirtyDaysMs).length,
     rows,
+    organizationOptions: (organizationsData ?? []) as ContactOrganization[]
+  };
+}
+
+export async function getContactDetailData(supabase: SupabaseClient, contactId: string): Promise<ContactDetailData> {
+  const [{ data: contactData, error: contactError }, { data: organizationsData, error: organizationsError }] =
+    await Promise.all([
+      supabase.from('contacts').select(contactSelect).eq('id', contactId).maybeSingle(),
+      supabase
+        .from('organizations')
+        .select('id, name, organization_type, headquarters')
+        .order('name')
+        .limit(500)
+    ]);
+
+  if (contactError || organizationsError || !contactData) {
+    return {
+      source: 'empty',
+      row: null,
+      organizationOptions: []
+    };
+  }
+
+  return {
+    source: 'supabase',
+    row: normalizeContactRow(contactData as ContactQueryRow),
     organizationOptions: (organizationsData ?? []) as ContactOrganization[]
   };
 }

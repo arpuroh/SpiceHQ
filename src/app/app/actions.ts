@@ -113,3 +113,81 @@ export async function addContactAction(formData: FormData) {
 
   redirect('/app/contacts?created=person');
 }
+
+export async function updateContactAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const contactId = getString(formData, 'contact_id');
+  const firstName = getString(formData, 'first_name');
+  const lastName = getString(formData, 'last_name');
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const organizationId = getString(formData, 'organization_id');
+  const jobTitle = getString(formData, 'job_title');
+  const email = getString(formData, 'email');
+  const linkedinUrl = getString(formData, 'linkedin_url');
+  const notes = getString(formData, 'notes');
+  const status = getString(formData, 'status');
+
+  if (!contactId) {
+    redirect('/app/contacts?error=' + buildQueryParam('Missing contact id.'));
+  }
+
+  if (!firstName || !lastName) {
+    redirect(`/app/contacts/${contactId}?error=` + buildQueryParam('First and last name are required.'));
+  }
+
+  const { error: contactError } = await admin
+    .from('contacts')
+    .update({
+      primary_organization_id: organizationId,
+      first_name: firstName,
+      last_name: lastName,
+      full_name: fullName,
+      job_title: jobTitle,
+      email,
+      linkedin_url: linkedinUrl,
+      status,
+      notes
+    })
+    .eq('id', contactId);
+
+  if (contactError) {
+    redirect(`/app/contacts/${contactId}?error=` + buildQueryParam(contactError.message));
+  }
+
+  const { error: clearPrimaryError } = await admin
+    .from('contact_organizations')
+    .update({ is_primary: false })
+    .eq('contact_id', contactId);
+
+  if (clearPrimaryError) {
+    redirect(`/app/contacts/${contactId}?error=` + buildQueryParam(clearPrimaryError.message));
+  }
+
+  if (organizationId) {
+    const { error: organizationLinkError } = await admin.from('contact_organizations').upsert(
+      {
+        contact_id: contactId,
+        organization_id: organizationId,
+        relationship_type: 'primary',
+        is_primary: true,
+        title: jobTitle
+      },
+      {
+        onConflict: 'contact_id,organization_id'
+      }
+    );
+
+    if (organizationLinkError) {
+      redirect(`/app/contacts/${contactId}?error=` + buildQueryParam(organizationLinkError.message));
+    }
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/contacts');
+  revalidatePath(`/app/contacts/${contactId}`);
+  revalidatePath('/app/interactions');
+
+  redirect(`/app/contacts/${contactId}?saved=1`);
+}

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { addContactAction, addOrganizationAction } from '@/app/app/actions';
 import { createClient } from '@/lib/supabase/server';
 import { formatDateTime, getContactsPageData } from '@/lib/data/contacts';
@@ -156,7 +157,9 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
                 return (
                   <tr key={row.id}>
                     <td>
-                      <strong>{row.full_name ?? `${row.first_name} ${row.last_name ?? ''}`.trim()}</strong>
+                      <Link href={`/app/contacts/${row.id}`} style={{ fontWeight: 700 }}>
+                        {row.full_name ?? `${row.first_name} ${row.last_name ?? ''}`.trim()}
+                      </Link>
                       <div className="tableSubtle">{row.linkedin_url ? 'LinkedIn on file' : 'No LinkedIn yet'}</div>
                     </td>
                     <td>
