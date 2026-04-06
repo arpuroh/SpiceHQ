@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatDateTime } from '@/lib/data/contacts';
-import { countActiveFilters, includesQuery, uniqueValues } from '@/lib/data/filters';
+import {
+  curateInteractionLikeRecord,
+  curateRecords,
+  type CuratedReason
+} from '@/lib/data/curation';
 
 interface RelatedContact {
   id: string;
@@ -65,26 +69,16 @@ interface InteractionQueryRow extends Omit<InteractionRow, 'contacts' | 'organiz
 export interface InteractionPageData {
   source: 'supabase' | 'empty';
   totalInteractions: number;
-  filteredInteractions: number;
+  visibleInteractions: number;
+  hiddenInteractions: number;
   recentInteractions: number;
   withContacts: number;
   withOrganizations: number;
   rows: InteractionRow[];
-  filterOptions: {
-    interactionTypes: string[];
-    sourceSystems: string[];
-    accountStages: string[];
-  };
-  activeFilterCount: number;
-}
-
-export interface InteractionFilters {
-  query: string | null;
-  interactionType: string | null;
-  sourceSystem: string | null;
-  accountStage: string | null;
-  fromDate: string | null;
-  toDate: string | null;
+  hiddenRows: Array<{
+    row: InteractionRow;
+    reasons: CuratedReason[];
+  }>;
 }
 
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
@@ -113,10 +107,7 @@ export function formatInteractionSummary(row: InteractionRow): string {
   return row.summary ?? row.body_preview ?? row.subject ?? '—';
 }
 
-export async function getInteractionsPageData(
-  supabase: SupabaseClient,
-  filters: InteractionFilters
-): Promise<InteractionPageData> {
+export async function getInteractionsPageData(supabase: SupabaseClient): Promise<InteractionPageData> {
   const { data, error, count } = await supabase
     .from('interactions')
     .select(
@@ -156,98 +147,69 @@ export async function getInteractionsPageData(
       { count: 'exact' }
     )
     .order('occurred_at', { ascending: false, nullsFirst: false })
-    .limit(500);
+    .limit(200);
 
   if (error) {
     return {
       source: 'empty',
       totalInteractions: 0,
-      filteredInteractions: 0,
+      visibleInteractions: 0,
+      hiddenInteractions: 0,
       recentInteractions: 0,
       withContacts: 0,
       withOrganizations: 0,
       rows: [],
-      filterOptions: {
-        interactionTypes: [],
-        sourceSystems: [],
-        accountStages: []
-      },
-      activeFilterCount: 0
+      hiddenRows: []
     };
   }
 
   const allRows = (data ?? []).map((row) => normalizeInteractionRow(row as InteractionQueryRow));
-  const fromDate = filters.fromDate ? new Date(`${filters.fromDate}T00:00:00`) : null;
-  const toDate = filters.toDate ? new Date(`${filters.toDate}T23:59:59.999`) : null;
-  const rows = allRows.filter((row) => {
-    const contactNames = row.contacts.flatMap((contactLink) => [
-      contactLink.contact?.full_name,
-      contactLink.contact?.first_name,
-      contactLink.contact?.last_name,
-      contactLink.contact?.job_title
-    ]);
-    const organizationNames = row.organizations.map((organizationLink) => organizationLink.organization?.name);
-    const accountStages = row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage);
-    const accountStatuses = row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.status);
+  const curated = curateRecords(allRows, (row) => {
+    const contactNames = row.contacts
+      .map((contactLink) => contactLink.contact?.full_name ?? [contactLink.contact?.first_name, contactLink.contact?.last_name].filter(Boolean).join(' '))
+      .filter(Boolean);
+    const organizationNames = row.organizations
+      .map((organizationLink) => organizationLink.organization?.name)
+      .filter(Boolean);
+    const evaluation = curateInteractionLikeRecord({
+      markerValues: [
+        row.interaction_type,
+        row.source_system,
+        row.subject,
+        row.summary,
+        row.body_preview,
+        ...contactNames,
+        ...organizationNames
+      ],
+      hasOccurredAt: Boolean(row.occurred_at),
+      hasSummary: Boolean(row.subject?.trim() || row.summary?.trim() || row.body_preview?.trim()),
+      hasLinkedSubjects: Boolean(contactNames.length || organizationNames.length),
+      hasFundraisingLink: Boolean(row.fundraising_accounts.some((accountLink) => accountLink.fundraising_account)),
+      hasSource: Boolean(row.source_system)
+    });
 
-    if (!includesQuery([
-      row.subject,
-      row.summary,
-      row.body_preview,
-      row.interaction_type,
-      row.source_system,
-      ...contactNames,
-      ...organizationNames,
-      ...accountStages,
-      ...accountStatuses
-    ], filters.query)) {
-      return false;
-    }
-
-    if (filters.interactionType && row.interaction_type !== filters.interactionType) return false;
-    if (filters.sourceSystem && row.source_system !== filters.sourceSystem) return false;
-    if (
-      filters.accountStage &&
-      !row.fundraising_accounts.some((accountLink) => accountLink.fundraising_account?.stage === filters.accountStage)
-    ) {
-      return false;
-    }
-
-    if (fromDate || toDate) {
-      if (!row.occurred_at) return false;
-      const occurredAt = new Date(row.occurred_at);
-      if (fromDate && occurredAt < fromDate) return false;
-      if (toDate && occurredAt > toDate) return false;
-    }
-
-    return true;
+    return {
+      row,
+      ...evaluation
+    };
   });
+  const rows = curated.visible.map((item) => item.row);
   const now = Date.now();
   const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
 
   return {
-    source: rows.length ? 'supabase' : 'empty',
+    source: allRows.length ? 'supabase' : 'empty',
     totalInteractions: count ?? allRows.length,
-    filteredInteractions: rows.length,
+    visibleInteractions: rows.length,
+    hiddenInteractions: curated.hidden.length,
     recentInteractions: rows.filter((row) => row.occurred_at && now - new Date(row.occurred_at).getTime() <= fourteenDaysMs).length,
     withContacts: rows.filter((row) => row.contacts.length > 0).length,
     withOrganizations: rows.filter((row) => row.organizations.length > 0).length,
     rows,
-    filterOptions: {
-      interactionTypes: uniqueValues(allRows.map((row) => row.interaction_type)),
-      sourceSystems: uniqueValues(allRows.map((row) => row.source_system)),
-      accountStages: uniqueValues(
-        allRows.flatMap((row) => row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage))
-      )
-    },
-    activeFilterCount: countActiveFilters([
-      filters.query,
-      filters.interactionType,
-      filters.sourceSystem,
-      filters.accountStage,
-      filters.fromDate,
-      filters.toDate
-    ])
+    hiddenRows: curated.hidden.map((item) => ({
+      row: item.row,
+      reasons: item.reasons
+    }))
   };
 }
 

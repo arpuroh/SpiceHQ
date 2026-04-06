@@ -1,22 +1,10 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { formatUsd, getFundraisingPageData } from '@/lib/data/fundraising';
-import { getSearchParam, normalizeOptionalFilter } from '@/lib/data/filters';
 
-type FundraisingPageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export default async function FundraisingPage({ searchParams }: FundraisingPageProps) {
-  const resolvedSearchParams = (await searchParams) ?? {};
-  const filters = {
-    query: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.q)),
-    stage: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.stage)),
-    status: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.status)),
-    organizationType: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.organization_type))
-  };
+export default async function FundraisingPage() {
   const supabase = await createClient();
-  const data = await getFundraisingPageData(supabase, filters);
+  const data = await getFundraisingPageData(supabase);
 
   return (
     <div className="container">
@@ -25,14 +13,17 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
           <div className="badge">Fundraising</div>
           <h1 style={{ margin: '12px 0 8px', fontSize: 36 }}>Investor / fundraising table</h1>
           <div className="subtle">
-            First real data-backed table from Supabase. Sorted by target commitment. Showing the top 250 rows for now.
+            Default view now suppresses placeholder accounts and lifts rows with real organization, relationship, and capital signal.
           </div>
         </div>
-        <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
+        <div className="buttonRow">
+          <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
+          <Link href="/app/review" className="secondaryButton">Review hidden rows</Link>
+        </div>
       </div>
 
       <div className="grid grid-4" style={{ marginBottom: 24 }}>
-        <section className="panel"><div className="kpiTitle">Accounts</div><div className="kpiValue">{data.filteredAccounts}</div></section>
+        <section className="panel"><div className="kpiTitle">Visible accounts</div><div className="kpiValue">{data.visibleAccounts}</div><div className="metricNote">{data.hiddenAccounts} hidden</div></section>
         <section className="panel"><div className="kpiTitle">Target</div><div className="kpiValue">{formatUsd(data.totalTarget)}</div></section>
         <section className="panel"><div className="kpiTitle">Soft circled</div><div className="kpiValue">{formatUsd(data.totalSoftCircled)}</div></section>
         <section className="panel"><div className="kpiTitle">Committed</div><div className="kpiValue">{formatUsd(data.totalCommitted)}</div></section>
@@ -41,67 +32,11 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
       <section className="panel">
         <div className="panelHeader">
           <div>
-            <h2 className="sectionTitle">Accounts</h2>
-            <div className="subtle">
-              Showing {data.filteredAccounts} of {data.totalAccounts} fundraising accounts
-              {data.activeFilterCount ? ` with ${data.activeFilterCount} active filter${data.activeFilterCount === 1 ? '' : 's'}` : ''}.
-            </div>
+            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Curated accounts</h2>
+            <div className="subtle">Sorted toward accounts with real organizations, financial signal, and relationship context.</div>
           </div>
-          {data.activeFilterCount ? (
-            <Link href="/app/fundraising" className="secondaryButton">Clear filters</Link>
-          ) : null}
+          <div className="badge">{data.totalAccounts} imported total</div>
         </div>
-
-        <form className="filterPanel">
-          <div className="filterGrid filterGrid4">
-            <label className="field">
-              <span>Search</span>
-              <input
-                name="q"
-                defaultValue={filters.query ?? ''}
-                placeholder="Investor, memo, tag, HQ"
-              />
-            </label>
-
-            <label className="field">
-              <span>Stage</span>
-              <select name="stage" defaultValue={filters.stage ?? ''}>
-                <option value="">All stages</option>
-                {data.filterOptions.stages.map((stage) => (
-                  <option key={stage} value={stage}>{stage}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Status</span>
-              <select name="status" defaultValue={filters.status ?? ''}>
-                <option value="">All statuses</option>
-                {data.filterOptions.statuses.map((status) => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Organization type</span>
-              <select name="organization_type" defaultValue={filters.organizationType ?? ''}>
-                <option value="">All types</option>
-                {data.filterOptions.organizationTypes.map((organizationType) => (
-                  <option key={organizationType} value={organizationType}>{organizationType}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="buttonRow">
-            <button type="submit" className="primaryButton">Apply filters</button>
-            {data.activeFilterCount ? (
-              <Link href="/app/fundraising" className="secondaryButton">Reset</Link>
-            ) : null}
-          </div>
-        </form>
-
         <div className="tableWrap">
           <table className="table">
             <thead>
@@ -142,6 +77,39 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
           </table>
         </div>
       </section>
+
+      {data.hiddenRows.length ? (
+        <section className="panel" style={{ marginTop: 24 }}>
+          <div className="panelHeader">
+            <div>
+              <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Suppressed fundraising rows</h2>
+              <div className="subtle">These rows remain accessible for cleanup and source-data triage.</div>
+            </div>
+            <div className="badge">{data.hiddenRows.length} suspect rows</div>
+          </div>
+
+          <div className="activityList">
+            {data.hiddenRows.slice(0, 12).map(({ row, reasons }) => (
+              <div key={row.id} className="activityItem">
+                <strong>{row.organization?.name ?? 'Unknown organization'}</strong>
+                <div className="tableSubtle">
+                  {row.stage} · {formatUsd(row.target_commitment)} target · {row.relationship_temperature ?? 'No relationship signal'}
+                </div>
+                <div className="pillRow">
+                  {reasons.map((reason) => (
+                    <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
+                  ))}
+                </div>
+                <div className="reasonList">
+                  {reasons.map((reason) => (
+                    <div key={`${row.id}-${reason.code}-detail`} className="tableSubtle">{reason.detail}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

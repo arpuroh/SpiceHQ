@@ -2,11 +2,6 @@ import Link from 'next/link';
 import { addContactAction, addOrganizationAction } from '@/app/app/actions';
 import { createClient } from '@/lib/supabase/server';
 import { formatDateTime, getContactsPageData } from '@/lib/data/contacts';
-import {
-  getSearchParam,
-  normalizeBooleanFilter,
-  normalizeOptionalFilter
-} from '@/lib/data/filters';
 
 type ContactsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -21,15 +16,8 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
   const resolvedSearchParams = (await searchParams) ?? {};
   const created = getMessageParam(resolvedSearchParams.created);
   const error = getMessageParam(resolvedSearchParams.error);
-  const filters = {
-    query: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.q)),
-    status: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.status)),
-    organizationType: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.organization_type)),
-    hasEmail: normalizeBooleanFilter(getSearchParam(resolvedSearchParams.has_email)),
-    hasLinkedin: normalizeBooleanFilter(getSearchParam(resolvedSearchParams.has_linkedin))
-  };
   const supabase = await createClient();
-  const data = await getContactsPageData(supabase, filters);
+  const data = await getContactsPageData(supabase);
 
   return (
     <div className="container">
@@ -38,10 +26,13 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
           <div className="badge">Contacts</div>
           <h1 style={{ margin: '12px 0 8px', fontSize: 36 }}>People and relationship memory</h1>
           <div className="subtle">
-            Real contact rows from Supabase, plus a simple way to add a person or organization without leaving the app.
+            Default view emphasizes usable people with real identity and contact context. Suspect imports stay available for review below.
           </div>
         </div>
-        <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
+        <div className="buttonRow">
+          <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
+          <Link href="/app/review" className="secondaryButton">Review hidden rows</Link>
+        </div>
       </div>
 
       {created ? (
@@ -52,7 +43,7 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
       {error ? <div className="errorBanner">{error}</div> : null}
 
       <div className="grid grid-4" style={{ marginBottom: 24 }}>
-        <section className="panel"><div className="kpiTitle">Contacts</div><div className="kpiValue">{data.filteredContacts}</div></section>
+        <section className="panel"><div className="kpiTitle">Visible contacts</div><div className="kpiValue">{data.visibleContacts}</div><div className="metricNote">{data.hiddenContacts} hidden</div></section>
         <section className="panel"><div className="kpiTitle">Linked orgs</div><div className="kpiValue">{data.linkedOrganizations}</div></section>
         <section className="panel"><div className="kpiTitle">With email</div><div className="kpiValue">{data.withEmail}</div></section>
         <section className="panel"><div className="kpiTitle">Added in 30d</div><div className="kpiValue">{data.recentlyAdded}</div></section>
@@ -146,68 +137,11 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
       <section className="panel">
         <div className="panelHeader">
           <div>
-            <h2 className="sectionTitle">Recent contacts</h2>
-            <div className="subtle">
-              Showing {data.filteredContacts} of {data.totalContacts} contacts
-              {data.activeFilterCount ? ` with ${data.activeFilterCount} active filter${data.activeFilterCount === 1 ? '' : 's'}` : ''}.
-            </div>
+            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Curated contacts</h2>
+            <div className="subtle">Sorted by usable identity, contactability, and linked organization context.</div>
           </div>
-          {data.activeFilterCount ? (
-            <Link href="/app/contacts" className="secondaryButton">Clear filters</Link>
-          ) : null}
+          <div className="badge">{data.totalContacts} imported total</div>
         </div>
-
-        <form className="filterPanel">
-          <div className="filterGrid filterGrid4">
-            <label className="field">
-              <span>Search</span>
-              <input
-                name="q"
-                defaultValue={filters.query ?? ''}
-                placeholder="Person, org, title, note"
-              />
-            </label>
-
-            <label className="field">
-              <span>Status</span>
-              <select name="status" defaultValue={filters.status ?? ''}>
-                <option value="">All statuses</option>
-                {data.filterOptions.statuses.map((status) => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Organization type</span>
-              <select name="organization_type" defaultValue={filters.organizationType ?? ''}>
-                <option value="">All types</option>
-                {data.filterOptions.organizationTypes.map((organizationType) => (
-                  <option key={organizationType} value={organizationType}>{organizationType}</option>
-                ))}
-              </select>
-            </label>
-
-            <div className="filterToggleRow">
-              <label className="checkboxField">
-                <input type="checkbox" name="has_email" value="1" defaultChecked={filters.hasEmail} />
-                <span>Has email</span>
-              </label>
-              <label className="checkboxField">
-                <input type="checkbox" name="has_linkedin" value="1" defaultChecked={filters.hasLinkedin} />
-                <span>Has LinkedIn</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="buttonRow">
-            <button type="submit" className="primaryButton">Apply filters</button>
-            {data.activeFilterCount ? (
-              <Link href="/app/contacts" className="secondaryButton">Reset</Link>
-            ) : null}
-          </div>
-        </form>
-
         <div className="tableWrap">
           <table className="table">
             <thead>
@@ -260,6 +194,44 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
           </table>
         </div>
       </section>
+
+      {data.hiddenRows.length ? (
+        <section className="panel" style={{ marginTop: 24 }}>
+          <div className="panelHeader">
+            <div>
+              <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Hidden from default view</h2>
+              <div className="subtle">
+                Rows stay in the app for traceability. Review the most obvious junk before deciding whether to repair the source data.
+              </div>
+            </div>
+            <div className="badge">{data.hiddenRows.length} suspect rows</div>
+          </div>
+
+          <div className="activityList">
+            {data.hiddenRows.slice(0, 12).map(({ row, reasons }) => (
+              <div key={row.id} className="activityItem">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+                  <div>
+                    <strong>{row.full_name ?? (`${row.first_name} ${row.last_name ?? ''}`.trim() || 'Unnamed contact')}</strong>
+                    <div className="tableSubtle">{row.email ?? row.primary_organization?.name ?? 'No verified contact context'}</div>
+                  </div>
+                  <Link href={`/app/contacts/${row.id}`} className="secondaryButton">Open</Link>
+                </div>
+                <div className="pillRow">
+                  {reasons.map((reason) => (
+                    <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
+                  ))}
+                </div>
+                <div className="reasonList">
+                  {reasons.map((reason) => (
+                    <div key={`${row.id}-${reason.code}-detail`} className="tableSubtle">{reason.detail}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

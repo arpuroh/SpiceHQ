@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { countActiveFilters, includesQuery, uniqueValues } from '@/lib/data/filters';
+import {
+  curateOrganizationLikeRecord,
+  curateRecords,
+  type CuratedReason
+} from '@/lib/data/curation';
 
 export interface FundraisingRow {
   id: string;
@@ -37,25 +41,17 @@ export interface FundraisingPageData {
   source: 'supabase' | 'empty';
   totalOrganizations: number;
   totalAccounts: number;
-  filteredAccounts: number;
+  visibleAccounts: number;
+  hiddenAccounts: number;
   stageCounts: Array<{ stage: string; count: number }>;
   totalTarget: number;
   totalCommitted: number;
   totalSoftCircled: number;
   rows: FundraisingRow[];
-  filterOptions: {
-    stages: string[];
-    statuses: string[];
-    organizationTypes: string[];
-  };
-  activeFilterCount: number;
-}
-
-export interface FundraisingFilters {
-  query: string | null;
-  stage: string | null;
-  status: string | null;
-  organizationType: string | null;
+  hiddenRows: Array<{
+    row: FundraisingRow;
+    reasons: CuratedReason[];
+  }>;
 }
 
 function firstRelated<T>(value: T[] | null | undefined): T | null {
@@ -80,10 +76,7 @@ export function formatUsd(value: number | null): string {
   }).format(value);
 }
 
-export async function getFundraisingPageData(
-  supabase: SupabaseClient,
-  filters: FundraisingFilters
-): Promise<FundraisingPageData> {
+export async function getFundraisingPageData(supabase: SupabaseClient): Promise<FundraisingPageData> {
   const [
     { data: accountsData, error: accountsError, count },
     { count: organizationCount, error: organizationsError }
@@ -113,7 +106,7 @@ export async function getFundraisingPageData(
         { count: 'exact' }
       )
       .order('target_commitment', { ascending: false, nullsFirst: false })
-      .limit(500),
+      .limit(250),
     supabase.from('organizations').select('id', { head: true, count: 'exact' })
   ]);
 
@@ -122,41 +115,44 @@ export async function getFundraisingPageData(
       source: 'empty',
       totalOrganizations: 0,
       totalAccounts: 0,
-      filteredAccounts: 0,
+      visibleAccounts: 0,
+      hiddenAccounts: 0,
       stageCounts: [],
       totalTarget: 0,
       totalCommitted: 0,
       totalSoftCircled: 0,
       rows: [],
-      filterOptions: {
-        stages: [],
-        statuses: [],
-        organizationTypes: []
-      },
-      activeFilterCount: 0
+      hiddenRows: []
     };
   }
 
   const allRows = normalizeRows((accountsData ?? []) as unknown as FundraisingQueryRow[]);
-  const rows = allRows.filter((row) => {
-    if (!includesQuery([
-      row.organization?.name,
-      row.organization?.headquarters,
-      row.organization?.organization_type,
-      row.stage,
-      row.status,
-      row.memo,
-      ...(row.organization?.tags ?? [])
-    ], filters.query)) {
-      return false;
-    }
+  const curated = curateRecords(allRows, (row) => {
+    const evaluation = curateOrganizationLikeRecord({
+      name: row.organization?.name,
+      markerValues: [
+        row.organization?.organization_type,
+        row.organization?.headquarters,
+        row.organization?.tags?.join(' '),
+        row.stage,
+        row.status,
+        row.relationship_temperature,
+        row.memo
+      ],
+      hasFinancialSignal: Boolean(
+        row.target_commitment || row.soft_circled_amount || row.committed_amount || row.wired_amount
+      ),
+      hasEngagementSignal: Boolean(row.probability_pct !== null || row.relationship_temperature),
+      hasMemo: Boolean(row.memo?.trim()),
+      hasContext: Boolean(row.organization?.organization_type || row.organization?.headquarters || row.organization?.tags?.length)
+    });
 
-    if (filters.stage && row.stage !== filters.stage) return false;
-    if (filters.status && row.status !== filters.status) return false;
-    if (filters.organizationType && row.organization?.organization_type !== filters.organizationType) return false;
-
-    return true;
+    return {
+      row,
+      ...evaluation
+    };
   });
+  const rows = curated.visible.map((item) => item.row);
   const stageMap = new Map<string, number>();
   let totalTarget = 0;
   let totalCommitted = 0;
@@ -170,10 +166,11 @@ export async function getFundraisingPageData(
   }
 
   return {
-    source: rows.length ? 'supabase' : 'empty',
+    source: allRows.length ? 'supabase' : 'empty',
     totalOrganizations: organizationCount ?? 0,
     totalAccounts: count ?? allRows.length,
-    filteredAccounts: rows.length,
+    visibleAccounts: rows.length,
+    hiddenAccounts: curated.hidden.length,
     stageCounts: Array.from(stageMap.entries())
       .map(([stage, stageCount]) => ({ stage, count: stageCount }))
       .sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage)),
@@ -181,16 +178,9 @@ export async function getFundraisingPageData(
     totalCommitted,
     totalSoftCircled,
     rows,
-    filterOptions: {
-      stages: uniqueValues(allRows.map((row) => row.stage)),
-      statuses: uniqueValues(allRows.map((row) => row.status)),
-      organizationTypes: uniqueValues(allRows.map((row) => row.organization?.organization_type))
-    },
-    activeFilterCount: countActiveFilters([
-      filters.query,
-      filters.stage,
-      filters.status,
-      filters.organizationType
-    ])
+    hiddenRows: curated.hidden.map((item) => ({
+      row: item.row,
+      reasons: item.reasons
+    }))
   };
 }

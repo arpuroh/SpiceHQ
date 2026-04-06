@@ -109,6 +109,10 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .kpiTitle {
   color: var(--muted);
   font-size: 12px;
@@ -122,9 +126,23 @@ body {
   font-weight: 700;
 }
 
+.metricNote {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .sectionTitle {
   margin: 0 0 12px;
   font-size: 18px;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
 .stageList, .activityList {
@@ -171,6 +189,13 @@ body {
 .secondaryButton {
   background: transparent;
   color: var(--text);
+}
+
+.buttonRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .hero {
@@ -235,6 +260,15 @@ body {
   color: #bbf7d0;
 }
 
+.warningBanner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(217, 119, 6, 0.16);
+  color: #fde68a;
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -256,6 +290,70 @@ body {
   gap: 8px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.pillRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.reasonPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+  font-size: 12px;
+}
+
+.reasonList {
+  margin-top: 8px;
+}
+
+input, select, textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(7, 12, 21, 0.9);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+@media (max-width: 1080px) {
+  .grid-4, .grid-3, .grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .appShell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .topbar, .panelHeader {
+    flex-direction: column;
+  }
+
+  .grid-4, .grid-3, .grid-2, .formGrid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .container {
+    padding: 18px;
+  }
 }
 
 .field input,
@@ -296,51 +394,6 @@ body {
   flex-wrap: wrap;
 }
 
-.filterPanel {
-  margin-bottom: 18px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255,255,255,0.02);
-}
-
-.filterGrid {
-  display: grid;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.filterGrid3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.filterGrid4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.filterToggleRow {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.checkboxField {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255,255,255,0.02);
-  color: var(--text);
-}
-
-.checkboxField input {
-  margin: 0;
-}
-
 @media (max-width: 900px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -351,9 +404,6 @@ body {
     border-bottom: 1px solid var(--line);
   }
   .grid-4, .grid-2 {
-    grid-template-columns: 1fr;
-  }
-  .filterGrid4, .filterGrid3 {
     grid-template-columns: 1fr;
   }
   .formGrid2 {
