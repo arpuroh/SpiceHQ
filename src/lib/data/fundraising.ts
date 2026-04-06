@@ -1,4 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  assessRecordQuality,
+  isActiveFundraisingStage,
+  isActiveFundraisingStatus,
+  type ReviewFlag
+} from '@/lib/data/record-quality';
 
 export interface FundraisingRow {
   id: string;
@@ -18,6 +24,9 @@ export interface FundraisingRow {
     headquarters: string | null;
     tags: string[] | null;
   } | null;
+  quality: 'verified' | 'review';
+  review_flags: ReviewFlag[];
+  is_active: boolean;
 }
 
 interface FundraisingQueryRow extends Omit<FundraisingRow, 'organization'> {
@@ -36,11 +45,15 @@ export interface FundraisingPageData {
   source: 'supabase' | 'empty';
   totalOrganizations: number;
   totalAccounts: number;
+  verifiedAccounts: number;
+  reviewAccounts: number;
+  activeAccounts: number;
   stageCounts: Array<{ stage: string; count: number }>;
   totalTarget: number;
   totalCommitted: number;
   totalSoftCircled: number;
   rows: FundraisingRow[];
+  reviewRows: FundraisingRow[];
 }
 
 function firstRelated<T>(value: T[] | null | undefined): T | null {
@@ -50,7 +63,26 @@ function firstRelated<T>(value: T[] | null | undefined): T | null {
 function normalizeRows(rows: FundraisingQueryRow[]): FundraisingRow[] {
   return rows.map((row) => ({
     ...row,
-    organization: firstRelated(row.organization)
+    organization: firstRelated(row.organization),
+    ...(() => {
+      const organization = firstRelated(row.organization);
+      const quality = assessRecordQuality(
+        [organization?.name, organization?.organization_type, organization?.headquarters, row.memo, row.stage, row.status],
+        { requireIdentity: true }
+      );
+      const isActive = isActiveFundraisingStatus(row.status) && isActiveFundraisingStage(row.stage);
+      const reviewFlags = [...quality.flags];
+
+      if (!isActive) {
+        reviewFlags.push('inactive_fundraising');
+      }
+
+      return {
+        quality: quality.quality === 'review' || !isActive ? 'review' : 'verified',
+        review_flags: reviewFlags,
+        is_active: isActive
+      };
+    })()
   }));
 }
 
@@ -63,6 +95,28 @@ export function formatUsd(value: number | null): string {
     notation: Math.abs(value) >= 1_000_000 ? 'compact' : 'standard',
     maximumFractionDigits: 1
   }).format(value);
+}
+
+export function matchesFundraisingQuery(row: FundraisingRow, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) return true;
+
+  const haystack = [
+    row.organization?.name,
+    row.organization?.organization_type,
+    row.organization?.headquarters,
+    row.organization?.tags?.join(' '),
+    row.stage,
+    row.status,
+    row.relationship_temperature,
+    row.memo
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
 }
 
 export async function getFundraisingPageData(supabase: SupabaseClient): Promise<FundraisingPageData> {
@@ -104,15 +158,21 @@ export async function getFundraisingPageData(supabase: SupabaseClient): Promise<
       source: 'empty',
       totalOrganizations: 0,
       totalAccounts: 0,
+      verifiedAccounts: 0,
+      reviewAccounts: 0,
+      activeAccounts: 0,
       stageCounts: [],
       totalTarget: 0,
       totalCommitted: 0,
       totalSoftCircled: 0,
-      rows: []
+      rows: [],
+      reviewRows: []
     };
   }
 
-  const rows = normalizeRows((accountsData ?? []) as unknown as FundraisingQueryRow[]);
+  const allRows = normalizeRows((accountsData ?? []) as unknown as FundraisingQueryRow[]);
+  const rows = allRows.filter((row) => row.quality === 'verified');
+  const reviewRows = allRows.filter((row) => row.quality === 'review');
   const stageMap = new Map<string, number>();
   let totalTarget = 0;
   let totalCommitted = 0;
@@ -126,15 +186,19 @@ export async function getFundraisingPageData(supabase: SupabaseClient): Promise<
   }
 
   return {
-    source: rows.length ? 'supabase' : 'empty',
+    source: allRows.length ? 'supabase' : 'empty',
     totalOrganizations: organizationCount ?? 0,
-    totalAccounts: count ?? rows.length,
+    totalAccounts: count ?? allRows.length,
+    verifiedAccounts: rows.length,
+    reviewAccounts: reviewRows.length,
+    activeAccounts: rows.filter((row) => row.is_active).length,
     stageCounts: Array.from(stageMap.entries())
       .map(([stage, stageCount]) => ({ stage, count: stageCount }))
       .sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage)),
     totalTarget,
     totalCommitted,
     totalSoftCircled,
-    rows
+    rows,
+    reviewRows
   };
 }

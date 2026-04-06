@@ -11,7 +11,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const error = params.error ? errorMessages[params.error] ?? 'Login failed.' : null;
 
   return (
-    <main className="container">
+    <main className="container" style={{ padding: 28 }}>
       <div className="hero">
         <div className="badge">Spice HQ · Fund III CRM</div>
         <h1>Investor memory, pipeline, and operating context in one place.</h1>

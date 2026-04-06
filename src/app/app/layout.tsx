@@ -7,20 +7,36 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   return (
     <div className="appShell">
       <aside className="sidebar">
-        <div>
-          <div className="brand">Spice HQ</div>
-          <div className="subtle" style={{ marginTop: 6 }}>Fund III operating system</div>
+        <div className="brandLockup">
+          <div className="brandBadge">Internal CRM</div>
+          <div>
+            <div className="brand">Spice HQ</div>
+            <div className="subtle" style={{ marginTop: 6 }}>Fund III operating system</div>
+          </div>
         </div>
 
         <AppNav />
 
         <div className="sidebarFooter subtle">
-          Signed in as<br />
+          Workspace access<br />
           <strong style={{ color: 'var(--text)' }}>{email}</strong>
         </div>
       </aside>
 
-      <main className="mainContent">{children}</main>
+      <main className="mainContent">
+        <div className="contentFrame">
+          <div className="container">
+            <div className="shellTopbar">
+              <div>
+                <div className="shellTitle">Investor CRM workspace</div>
+                <div className="shellMeta">Searchable pipeline, contacts, and interaction history backed by Supabase.</div>
+              </div>
+              <div className="sourceBadge">Authenticated session</div>
+            </div>
+            {children}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

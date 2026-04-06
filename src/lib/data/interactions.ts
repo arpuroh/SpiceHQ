@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatDateTime } from '@/lib/data/contacts';
+import { assessRecordQuality, type ReviewFlag } from '@/lib/data/record-quality';
 
 interface RelatedContact {
   id: string;
@@ -39,6 +40,8 @@ export interface InteractionRow {
   fundraising_accounts: Array<{
     fundraising_account: RelatedFundraisingAccount | null;
   }>;
+  quality: 'verified' | 'review';
+  review_flags: ReviewFlag[];
 }
 
 interface InteractionQueryRow extends Omit<InteractionRow, 'contacts' | 'organizations' | 'fundraising_accounts'> {
@@ -64,10 +67,13 @@ interface InteractionQueryRow extends Omit<InteractionRow, 'contacts' | 'organiz
 export interface InteractionPageData {
   source: 'supabase' | 'empty';
   totalInteractions: number;
+  verifiedInteractions: number;
+  reviewInteractions: number;
   recentInteractions: number;
   withContacts: number;
   withOrganizations: number;
   rows: InteractionRow[];
+  reviewRows: InteractionRow[];
 }
 
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
@@ -76,24 +82,65 @@ function firstRelated<T>(value: T | T[] | null | undefined): T | null {
 }
 
 function normalizeInteractionRow(row: InteractionQueryRow): InteractionRow {
+  const contacts = (row.contacts ?? []).map((contactLink) => ({
+    ...contactLink,
+    contact: firstRelated(contactLink.contact)
+  }));
+  const organizations = (row.organizations ?? []).map((organizationLink) => ({
+    ...organizationLink,
+    organization: firstRelated(organizationLink.organization)
+  }));
+  const fundraisingAccounts = (row.fundraising_accounts ?? []).map((accountLink) => ({
+    fundraising_account: firstRelated(accountLink.fundraising_account)
+  }));
+  const quality = assessRecordQuality(
+    [
+      row.subject,
+      row.summary,
+      row.body_preview,
+      row.source_system,
+      ...contacts.map((contactLink) => contactLink.contact?.full_name ?? contactLink.contact?.first_name),
+      ...organizations.map((organizationLink) => organizationLink.organization?.name)
+    ],
+    { requireIdentity: true }
+  );
+
   return {
     ...row,
-    contacts: (row.contacts ?? []).map((contactLink) => ({
-      ...contactLink,
-      contact: firstRelated(contactLink.contact)
-    })),
-    organizations: (row.organizations ?? []).map((organizationLink) => ({
-      ...organizationLink,
-      organization: firstRelated(organizationLink.organization)
-    })),
-    fundraising_accounts: (row.fundraising_accounts ?? []).map((accountLink) => ({
-      fundraising_account: firstRelated(accountLink.fundraising_account)
-    }))
+    contacts,
+    organizations,
+    fundraising_accounts: fundraisingAccounts,
+    quality: quality.quality,
+    review_flags: quality.flags
   };
 }
 
 export function formatInteractionSummary(row: InteractionRow): string {
   return row.summary ?? row.body_preview ?? row.subject ?? '—';
+}
+
+export function matchesInteractionQuery(row: InteractionRow, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) return true;
+
+  const haystack = [
+    row.interaction_type,
+    row.source_system,
+    row.subject,
+    row.summary,
+    row.body_preview,
+    ...row.contacts.map((contactLink) =>
+      contactLink.contact?.full_name ?? [contactLink.contact?.first_name, contactLink.contact?.last_name].filter(Boolean).join(' ')
+    ),
+    ...row.organizations.map((organizationLink) => organizationLink.organization?.name),
+    ...row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage)
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
 }
 
 export async function getInteractionsPageData(supabase: SupabaseClient): Promise<InteractionPageData> {
@@ -142,24 +189,32 @@ export async function getInteractionsPageData(supabase: SupabaseClient): Promise
     return {
       source: 'empty',
       totalInteractions: 0,
+      verifiedInteractions: 0,
+      reviewInteractions: 0,
       recentInteractions: 0,
       withContacts: 0,
       withOrganizations: 0,
-      rows: []
+      rows: [],
+      reviewRows: []
     };
   }
 
-  const rows = (data ?? []).map((row) => normalizeInteractionRow(row as InteractionQueryRow));
+  const allRows = (data ?? []).map((row) => normalizeInteractionRow(row as InteractionQueryRow));
+  const rows = allRows.filter((row) => row.quality === 'verified');
+  const reviewRows = allRows.filter((row) => row.quality === 'review');
   const now = Date.now();
   const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
 
   return {
-    source: rows.length ? 'supabase' : 'empty',
-    totalInteractions: count ?? rows.length,
+    source: allRows.length ? 'supabase' : 'empty',
+    totalInteractions: count ?? allRows.length,
+    verifiedInteractions: rows.length,
+    reviewInteractions: reviewRows.length,
     recentInteractions: rows.filter((row) => row.occurred_at && now - new Date(row.occurred_at).getTime() <= fourteenDaysMs).length,
     withContacts: rows.filter((row) => row.contacts.length > 0).length,
     withOrganizations: rows.filter((row) => row.organizations.length > 0).length,
-    rows
+    rows,
+    reviewRows
   };
 }
 

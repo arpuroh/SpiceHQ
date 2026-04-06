@@ -4,26 +4,51 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const nav = [
-  { href: '/app', label: 'Overview' },
-  { href: '/app/fundraising', label: 'Fundraising' },
-  { href: '/app/contacts', label: 'Contacts' },
-  { href: '/app/interactions', label: 'Interactions' }
+  {
+    href: '/app',
+    label: 'Overview',
+    meta: 'Fund health, queue pressure, and operating summary'
+  },
+  {
+    href: '/app/fundraising',
+    label: 'Fundraising',
+    meta: 'Pipeline, stages, commitments, and investor coverage'
+  },
+  {
+    href: '/app/organizations',
+    label: 'Organizations',
+    meta: 'Investor directory, firm details, and relationship context'
+  },
+  {
+    href: '/app/contacts',
+    label: 'Contacts',
+    meta: 'People records and relationship ownership'
+  },
+  {
+    href: '/app/interactions',
+    label: 'Interactions',
+    meta: 'Conversation history, touchpoints, and activity log'
+  }
 ];
 
 export function AppNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="sidebarNav">
+    <div>
+      <div className="sidebarSectionLabel">Workspace</div>
+      <nav className="sidebarNav">
       {nav.map((item) => {
-        const isActive = pathname === item.href;
+        const isActive = item.href === '/app' ? pathname === item.href : pathname.startsWith(item.href);
 
         return (
           <Link key={item.href} href={item.href} className={`navLink${isActive ? ' navLinkActive' : ''}`}>
-            {item.label}
+            <span className="navLinkLabel">{item.label}</span>
+            <span className="navLinkMeta">{item.meta}</span>
           </Link>
         );
       })}
-    </nav>
+      </nav>
+    </div>
   );
 }

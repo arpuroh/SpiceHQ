@@ -27,8 +27,10 @@ export async function addOrganizationAction(formData: FormData) {
   const headquarters = getString(formData, 'headquarters');
   const notes = getString(formData, 'notes');
 
+  const website = getString(formData, 'website');
+
   if (!name) {
-    redirect('/app/contacts?error=' + buildQueryParam('Organization name is required.'));
+    redirect('/app/organizations?error=' + buildQueryParam('Organization name is required.'));
   }
 
   const { error } = await admin.from('organizations').insert({
@@ -36,18 +38,20 @@ export async function addOrganizationAction(formData: FormData) {
     name,
     organization_type: organizationType,
     headquarters,
+    website,
     notes
   });
 
   if (error) {
-    redirect('/app/contacts?error=' + buildQueryParam(error.message));
+    redirect('/app/organizations?error=' + buildQueryParam(error.message));
   }
 
   revalidatePath('/app');
   revalidatePath('/app/contacts');
+  revalidatePath('/app/organizations');
   revalidatePath('/app/fundraising');
 
-  redirect('/app/contacts?created=organization');
+  redirect('/app/organizations?created=organization');
 }
 
 export async function addContactAction(formData: FormData) {
@@ -190,4 +194,124 @@ export async function updateContactAction(formData: FormData) {
   revalidatePath('/app/interactions');
 
   redirect(`/app/contacts/${contactId}?saved=1`);
+}
+
+export async function updateOrganizationAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const organizationId = getString(formData, 'organization_id');
+  const name = getString(formData, 'name');
+  const organizationType = getString(formData, 'organization_type');
+  const headquarters = getString(formData, 'headquarters');
+  const website = getString(formData, 'website');
+  const linkedinUrl = getString(formData, 'linkedin_url');
+  const notes = getString(formData, 'notes');
+
+  if (!organizationId) {
+    redirect('/app/organizations?error=' + buildQueryParam('Missing organization id.'));
+  }
+
+  if (!name) {
+    redirect(`/app/organizations/${organizationId}?error=` + buildQueryParam('Organization name is required.'));
+  }
+
+  const { error } = await admin
+    .from('organizations')
+    .update({
+      name,
+      organization_type: organizationType,
+      headquarters,
+      website,
+      linkedin_url: linkedinUrl,
+      notes,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', organizationId);
+
+  if (error) {
+    redirect(`/app/organizations/${organizationId}?error=` + buildQueryParam(error.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/organizations');
+  revalidatePath(`/app/organizations/${organizationId}`);
+  revalidatePath('/app/contacts');
+  revalidatePath('/app/fundraising');
+
+  redirect(`/app/organizations/${organizationId}?saved=1`);
+}
+
+export async function addInteractionAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const interactionType = getString(formData, 'interaction_type');
+  const sourceSystem = getString(formData, 'source_system') ?? 'manual';
+  const subject = getString(formData, 'subject');
+  const summary = getString(formData, 'summary');
+  const occurredAt = getString(formData, 'occurred_at') ?? new Date().toISOString();
+  const interactionId = randomUUID();
+
+  if (!subject && !summary) {
+    redirect('/app/interactions?error=' + buildQueryParam('At least a subject or summary is required.'));
+  }
+
+  const { error: interactionError } = await admin.from('interactions').insert({
+    id: interactionId,
+    interaction_type: interactionType ?? 'note',
+    source_system: sourceSystem,
+    subject,
+    summary,
+    body_preview: summary ? summary.slice(0, 200) : null,
+    occurred_at: occurredAt
+  });
+
+  if (interactionError) {
+    redirect('/app/interactions?error=' + buildQueryParam(interactionError.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/interactions');
+
+  redirect('/app/interactions?created=interaction');
+}
+
+export async function updateFundraisingStageAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const accountId = getString(formData, 'account_id');
+  const stage = getString(formData, 'stage');
+  const status = getString(formData, 'status');
+  const relationshipTemperature = getString(formData, 'relationship_temperature');
+  const memo = getString(formData, 'memo');
+
+  if (!accountId) {
+    redirect('/app/fundraising?error=' + buildQueryParam('Missing account id.'));
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (stage !== null) updates.stage = stage;
+  if (status !== null) updates.status = status;
+  if (relationshipTemperature !== null) updates.relationship_temperature = relationshipTemperature;
+  if (memo !== null) updates.memo = memo;
+
+  if (Object.keys(updates).length === 0) {
+    redirect('/app/fundraising');
+  }
+
+  const { error } = await admin
+    .from('fundraising_accounts')
+    .update(updates)
+    .eq('id', accountId);
+
+  if (error) {
+    redirect('/app/fundraising?error=' + buildQueryParam(error.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/fundraising');
+
+  redirect('/app/fundraising?saved=1');
 }

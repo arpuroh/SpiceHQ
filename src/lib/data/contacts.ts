@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { assessRecordQuality, type ReviewFlag } from '@/lib/data/record-quality';
 
 export interface ContactOrganization {
   id: string;
@@ -27,6 +28,8 @@ export interface ContactRow {
     title: string | null;
     organization: ContactOrganization | null;
   }>;
+  quality: 'verified' | 'review';
+  review_flags: ReviewFlag[];
 }
 
 interface ContactQueryRow extends Omit<ContactRow, 'primary_organization' | 'organizations'> {
@@ -44,10 +47,13 @@ interface ContactQueryRow extends Omit<ContactRow, 'primary_organization' | 'org
 export interface ContactPageData {
   source: 'supabase' | 'empty';
   totalContacts: number;
+  verifiedContacts: number;
+  reviewContacts: number;
   linkedOrganizations: number;
   withEmail: number;
   recentlyAdded: number;
   rows: ContactRow[];
+  reviewRows: ContactRow[];
   organizationOptions: ContactOrganization[];
 }
 
@@ -57,19 +63,43 @@ export interface ContactDetailData {
   organizationOptions: ContactOrganization[];
 }
 
+export function getContactDisplayName(row: Pick<ContactRow, 'full_name' | 'first_name' | 'last_name'>): string {
+  const fallbackName = `${row.first_name} ${row.last_name ?? ''}`.trim();
+  return (row.full_name ?? fallbackName) || 'Unnamed contact';
+}
+
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
 }
 
 function normalizeContactRow(row: ContactQueryRow): ContactRow {
+  const organizations = (row.organizations ?? []).map((organizationLink) => ({
+    ...organizationLink,
+    organization: firstRelated(organizationLink.organization)
+  }));
+  const primaryOrganization = firstRelated(row.primary_organization);
+  const quality = assessRecordQuality(
+    [
+      row.full_name,
+      row.first_name,
+      row.last_name,
+      row.email,
+      row.job_title,
+      row.notes,
+      row.linkedin_url,
+      primaryOrganization?.name,
+      ...organizations.map((organizationLink) => organizationLink.organization?.name)
+    ],
+    { requireIdentity: true }
+  );
+
   return {
     ...row,
-    primary_organization: firstRelated(row.primary_organization),
-    organizations: (row.organizations ?? []).map((organizationLink) => ({
-      ...organizationLink,
-      organization: firstRelated(organizationLink.organization)
-    }))
+    primary_organization: primaryOrganization,
+    organizations,
+    quality: quality.quality,
+    review_flags: quality.flags
   };
 }
 
@@ -117,6 +147,30 @@ export function formatDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
+export function matchesContactQuery(row: ContactRow, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) return true;
+
+  const haystack = [
+    getContactDisplayName(row),
+    row.job_title,
+    row.email,
+    row.phone,
+    row.linkedin_url,
+    row.preferred_channel,
+    row.status,
+    row.notes,
+    row.primary_organization?.name,
+    ...row.organizations.map((organizationLink) => organizationLink.organization?.name)
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
 export async function getContactsPageData(supabase: SupabaseClient): Promise<ContactPageData> {
   const [{ data: contactsData, error: contactsError, count }, { data: organizationsData, error: organizationsError }] =
     await Promise.all([
@@ -136,26 +190,38 @@ export async function getContactsPageData(supabase: SupabaseClient): Promise<Con
     return {
       source: 'empty',
       totalContacts: 0,
+      verifiedContacts: 0,
+      reviewContacts: 0,
       linkedOrganizations: 0,
       withEmail: 0,
       recentlyAdded: 0,
       rows: [],
+      reviewRows: [],
       organizationOptions: []
     };
   }
 
-  const rows = (contactsData ?? []).map((row) => normalizeContactRow(row as ContactQueryRow));
+  const allRows = (contactsData ?? []).map((row) => normalizeContactRow(row as ContactQueryRow));
+  const rows = allRows.filter((row) => row.quality === 'verified');
+  const reviewRows = allRows.filter((row) => row.quality === 'review');
   const now = Date.now();
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 
   return {
-    source: rows.length ? 'supabase' : 'empty',
-    totalContacts: count ?? rows.length,
+    source: allRows.length ? 'supabase' : 'empty',
+    totalContacts: count ?? allRows.length,
+    verifiedContacts: rows.length,
+    reviewContacts: reviewRows.length,
     linkedOrganizations: rows.filter((row) => row.primary_organization || row.organizations.length > 0).length,
     withEmail: rows.filter((row) => row.email).length,
     recentlyAdded: rows.filter((row) => row.created_at && now - new Date(row.created_at).getTime() <= thirtyDaysMs).length,
     rows,
-    organizationOptions: (organizationsData ?? []) as ContactOrganization[]
+    reviewRows,
+    organizationOptions: (organizationsData ?? []).filter((organization) =>
+      assessRecordQuality([organization.name, organization.organization_type, organization.headquarters], {
+        requireIdentity: true
+      }).quality === 'verified'
+    ) as ContactOrganization[]
   };
 }
 
@@ -181,6 +247,10 @@ export async function getContactDetailData(supabase: SupabaseClient, contactId: 
   return {
     source: 'supabase',
     row: normalizeContactRow(contactData as ContactQueryRow),
-    organizationOptions: (organizationsData ?? []) as ContactOrganization[]
+    organizationOptions: (organizationsData ?? []).filter((organization) =>
+      assessRecordQuality([organization.name, organization.organization_type, organization.headquarters], {
+        requireIdentity: true
+      }).quality === 'verified'
+    ) as ContactOrganization[]
   };
 }
