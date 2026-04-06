@@ -315,3 +315,157 @@ export async function updateFundraisingStageAction(formData: FormData) {
 
   redirect('/app/fundraising?saved=1');
 }
+
+export async function addPortfolioCompanyAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const companyName = getString(formData, 'company_name');
+  const sector = getString(formData, 'sector');
+  const stage = getString(formData, 'stage') ?? 'seed';
+  const investmentAmountRaw = getString(formData, 'investment_amount');
+  const valuationAtEntryRaw = getString(formData, 'valuation_at_entry');
+  const headquarters = getString(formData, 'headquarters');
+  const website = getString(formData, 'website');
+  const description = getString(formData, 'description');
+  const leadPartner = getString(formData, 'lead_partner');
+  const investmentDate = getString(formData, 'investment_date');
+  const notes = getString(formData, 'notes');
+
+  if (!companyName) {
+    redirect('/app/portfolio?error=' + buildQueryParam('Company name is required.'));
+  }
+
+  const { error } = await admin.from('portfolio_companies').insert({
+    id: randomUUID(),
+    company_name: companyName,
+    sector,
+    stage,
+    status: 'active',
+    investment_amount: investmentAmountRaw ? parseFloat(investmentAmountRaw) : null,
+    valuation_at_entry: valuationAtEntryRaw ? parseFloat(valuationAtEntryRaw) : null,
+    headquarters,
+    website,
+    description,
+    lead_partner: leadPartner,
+    investment_date: investmentDate || null,
+    notes
+  });
+
+  if (error) {
+    redirect('/app/portfolio?error=' + buildQueryParam(error.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/portfolio');
+
+  redirect('/app/portfolio?created=portfolio');
+}
+
+export async function addTaskAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const title = getString(formData, 'title');
+  const description = getString(formData, 'description');
+  const priority = getString(formData, 'priority') ?? 'medium';
+  const dueAt = getString(formData, 'due_at');
+  const organizationId = getString(formData, 'organization_id');
+  const contactId = getString(formData, 'contact_id');
+
+  if (!title) {
+    redirect('/app/tasks?error=' + buildQueryParam('Task title is required.'));
+  }
+
+  const { error } = await admin.from('tasks').insert({
+    id: randomUUID(),
+    title,
+    description,
+    status: 'open',
+    priority,
+    source_system: 'manual',
+    due_at: dueAt ? new Date(dueAt).toISOString() : null,
+    organization_id: organizationId || null,
+    contact_id: contactId || null
+  });
+
+  if (error) {
+    redirect('/app/tasks?error=' + buildQueryParam(error.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/tasks');
+
+  redirect('/app/tasks?created=task');
+}
+
+export async function updateTaskAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const taskId = getString(formData, 'task_id');
+  const status = getString(formData, 'status');
+
+  if (!taskId) {
+    redirect('/app/tasks?error=' + buildQueryParam('Missing task id.'));
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (status !== null) {
+    updates.status = status;
+    if (status === 'completed') updates.completed_at = new Date().toISOString();
+  }
+
+  if (Object.keys(updates).length === 0) {
+    redirect('/app/tasks');
+  }
+
+  const { error } = await admin
+    .from('tasks')
+    .update(updates)
+    .eq('id', taskId);
+
+  if (error) {
+    redirect('/app/tasks?error=' + buildQueryParam(error.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/tasks');
+
+  redirect('/app/tasks?saved=1');
+}
+
+export async function addNoteAction(formData: FormData) {
+  await requireAllowedUser();
+
+  const admin = createAdminClient();
+  const title = getString(formData, 'title');
+  const body = getString(formData, 'body');
+  const noteType = getString(formData, 'note_type') ?? 'general';
+  const pinnedRaw = getString(formData, 'pinned');
+  const organizationId = getString(formData, 'organization_id');
+  const contactId = getString(formData, 'contact_id');
+
+  if (!body) {
+    redirect('/app/notes?error=' + buildQueryParam('Note content is required.'));
+  }
+
+  const { error } = await admin.from('notes').insert({
+    id: randomUUID(),
+    title,
+    body,
+    note_type: noteType,
+    pinned: pinnedRaw === 'true',
+    organization_id: organizationId || null,
+    contact_id: contactId || null
+  });
+
+  if (error) {
+    redirect('/app/notes?error=' + buildQueryParam(error.message));
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/notes');
+
+  redirect('/app/notes?created=note');
+}

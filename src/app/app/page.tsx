@@ -5,14 +5,20 @@ import { getFundraisingPageData, formatUsd } from '@/lib/data/fundraising';
 import { getContactsPageData, formatDateTime, getContactDisplayName } from '@/lib/data/contacts';
 import { formatInteractionSummary, getInteractionsPageData } from '@/lib/data/interactions';
 import { getOrganizationsPageData } from '@/lib/data/organizations';
+import { getPortfolioPageData } from '@/lib/data/portfolio';
+import { getTasksPageData } from '@/lib/data/tasks';
+import { getNotesPageData } from '@/lib/data/notes';
 
 export default async function AppPage() {
   const supabase = await createClient();
-  const [fundraising, contacts, interactions, organizations] = await Promise.all([
+  const [fundraising, contacts, interactions, organizations, portfolio, tasks, notes] = await Promise.all([
     getFundraisingPageData(supabase),
     getContactsPageData(supabase),
     getInteractionsPageData(supabase),
-    getOrganizationsPageData(supabase)
+    getOrganizationsPageData(supabase),
+    getPortfolioPageData(supabase),
+    getTasksPageData(supabase),
+    getNotesPageData(supabase)
   ]);
 
   const spotlightRows = fundraising.rows.slice(0, 5);
@@ -117,6 +123,18 @@ export default async function AppPage() {
             <div className="activityItem">
               Fundraising rows in working view: <strong>{fundraising.verifiedAccounts}</strong>
               <div className="tableSubtle">{fundraising.reviewAccounts} excluded from the primary pipeline.</div>
+            </div>
+            <div className="activityItem">
+              Portfolio companies: <strong>{portfolio.activeCompanies}</strong>
+              <div className="tableSubtle">{portfolio.totalCompanies} total. <Link href="/app/portfolio" className="inlineLink">Open portfolio</Link></div>
+            </div>
+            <div className="activityItem">
+              Open tasks: <strong>{tasks.openTasks}</strong>
+              <div className="tableSubtle">{tasks.overdueTasks} overdue. <Link href="/app/tasks" className="inlineLink">Open tasks</Link></div>
+            </div>
+            <div className="activityItem">
+              Notes: <strong>{notes.verifiedNotes}</strong>
+              <div className="tableSubtle">{notes.pinnedNotes} pinned. <Link href="/app/notes" className="inlineLink">Open notes</Link></div>
             </div>
           </div>
         </section>

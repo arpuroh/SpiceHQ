@@ -28,6 +28,21 @@ const nav = [
     href: '/app/interactions',
     label: 'Interactions',
     meta: 'Conversation history, touchpoints, and activity log'
+  },
+  {
+    href: '/app/portfolio',
+    label: 'Portfolio',
+    meta: 'Portfolio companies, investments, and valuations'
+  },
+  {
+    href: '/app/tasks',
+    label: 'Tasks',
+    meta: 'Action items, follow-ups, and deadlines'
+  },
+  {
+    href: '/app/notes',
+    label: 'Notes',
+    meta: 'Meeting notes, memos, and relationship context'
   }
 ];
 
