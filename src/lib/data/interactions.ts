@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatDateTime } from '@/lib/data/contacts';
-import { assessRecordQuality, type ReviewFlag } from '@/lib/data/record-quality';
+import { countActiveFilters, includesQuery, uniqueValues } from '@/lib/data/filters';
 
 interface RelatedContact {
   id: string;
@@ -40,8 +40,6 @@ export interface InteractionRow {
   fundraising_accounts: Array<{
     fundraising_account: RelatedFundraisingAccount | null;
   }>;
-  quality: 'verified' | 'review';
-  review_flags: ReviewFlag[];
 }
 
 interface InteractionQueryRow extends Omit<InteractionRow, 'contacts' | 'organizations' | 'fundraising_accounts'> {
@@ -67,13 +65,26 @@ interface InteractionQueryRow extends Omit<InteractionRow, 'contacts' | 'organiz
 export interface InteractionPageData {
   source: 'supabase' | 'empty';
   totalInteractions: number;
-  verifiedInteractions: number;
-  reviewInteractions: number;
+  filteredInteractions: number;
   recentInteractions: number;
   withContacts: number;
   withOrganizations: number;
   rows: InteractionRow[];
-  reviewRows: InteractionRow[];
+  filterOptions: {
+    interactionTypes: string[];
+    sourceSystems: string[];
+    accountStages: string[];
+  };
+  activeFilterCount: number;
+}
+
+export interface InteractionFilters {
+  query: string | null;
+  interactionType: string | null;
+  sourceSystem: string | null;
+  accountStage: string | null;
+  fromDate: string | null;
+  toDate: string | null;
 }
 
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
@@ -82,36 +93,19 @@ function firstRelated<T>(value: T | T[] | null | undefined): T | null {
 }
 
 function normalizeInteractionRow(row: InteractionQueryRow): InteractionRow {
-  const contacts = (row.contacts ?? []).map((contactLink) => ({
-    ...contactLink,
-    contact: firstRelated(contactLink.contact)
-  }));
-  const organizations = (row.organizations ?? []).map((organizationLink) => ({
-    ...organizationLink,
-    organization: firstRelated(organizationLink.organization)
-  }));
-  const fundraisingAccounts = (row.fundraising_accounts ?? []).map((accountLink) => ({
-    fundraising_account: firstRelated(accountLink.fundraising_account)
-  }));
-  const quality = assessRecordQuality(
-    [
-      row.subject,
-      row.summary,
-      row.body_preview,
-      row.source_system,
-      ...contacts.map((contactLink) => contactLink.contact?.full_name ?? contactLink.contact?.first_name),
-      ...organizations.map((organizationLink) => organizationLink.organization?.name)
-    ],
-    { requireIdentity: true }
-  );
-
   return {
     ...row,
-    contacts,
-    organizations,
-    fundraising_accounts: fundraisingAccounts,
-    quality: quality.quality,
-    review_flags: quality.flags
+    contacts: (row.contacts ?? []).map((contactLink) => ({
+      ...contactLink,
+      contact: firstRelated(contactLink.contact)
+    })),
+    organizations: (row.organizations ?? []).map((organizationLink) => ({
+      ...organizationLink,
+      organization: firstRelated(organizationLink.organization)
+    })),
+    fundraising_accounts: (row.fundraising_accounts ?? []).map((accountLink) => ({
+      fundraising_account: firstRelated(accountLink.fundraising_account)
+    }))
   };
 }
 
@@ -119,31 +113,10 @@ export function formatInteractionSummary(row: InteractionRow): string {
   return row.summary ?? row.body_preview ?? row.subject ?? '—';
 }
 
-export function matchesInteractionQuery(row: InteractionRow, query: string): boolean {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  if (!normalizedQuery) return true;
-
-  const haystack = [
-    row.interaction_type,
-    row.source_system,
-    row.subject,
-    row.summary,
-    row.body_preview,
-    ...row.contacts.map((contactLink) =>
-      contactLink.contact?.full_name ?? [contactLink.contact?.first_name, contactLink.contact?.last_name].filter(Boolean).join(' ')
-    ),
-    ...row.organizations.map((organizationLink) => organizationLink.organization?.name),
-    ...row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage)
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return haystack.includes(normalizedQuery);
-}
-
-export async function getInteractionsPageData(supabase: SupabaseClient): Promise<InteractionPageData> {
+export async function getInteractionsPageData(
+  supabase: SupabaseClient,
+  filters: InteractionFilters
+): Promise<InteractionPageData> {
   const { data, error, count } = await supabase
     .from('interactions')
     .select(
@@ -183,38 +156,98 @@ export async function getInteractionsPageData(supabase: SupabaseClient): Promise
       { count: 'exact' }
     )
     .order('occurred_at', { ascending: false, nullsFirst: false })
-    .limit(200);
+    .limit(500);
 
   if (error) {
     return {
       source: 'empty',
       totalInteractions: 0,
-      verifiedInteractions: 0,
-      reviewInteractions: 0,
+      filteredInteractions: 0,
       recentInteractions: 0,
       withContacts: 0,
       withOrganizations: 0,
       rows: [],
-      reviewRows: []
+      filterOptions: {
+        interactionTypes: [],
+        sourceSystems: [],
+        accountStages: []
+      },
+      activeFilterCount: 0
     };
   }
 
   const allRows = (data ?? []).map((row) => normalizeInteractionRow(row as InteractionQueryRow));
-  const rows = allRows.filter((row) => row.quality === 'verified');
-  const reviewRows = allRows.filter((row) => row.quality === 'review');
+  const fromDate = filters.fromDate ? new Date(`${filters.fromDate}T00:00:00`) : null;
+  const toDate = filters.toDate ? new Date(`${filters.toDate}T23:59:59.999`) : null;
+  const rows = allRows.filter((row) => {
+    const contactNames = row.contacts.flatMap((contactLink) => [
+      contactLink.contact?.full_name,
+      contactLink.contact?.first_name,
+      contactLink.contact?.last_name,
+      contactLink.contact?.job_title
+    ]);
+    const organizationNames = row.organizations.map((organizationLink) => organizationLink.organization?.name);
+    const accountStages = row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage);
+    const accountStatuses = row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.status);
+
+    if (!includesQuery([
+      row.subject,
+      row.summary,
+      row.body_preview,
+      row.interaction_type,
+      row.source_system,
+      ...contactNames,
+      ...organizationNames,
+      ...accountStages,
+      ...accountStatuses
+    ], filters.query)) {
+      return false;
+    }
+
+    if (filters.interactionType && row.interaction_type !== filters.interactionType) return false;
+    if (filters.sourceSystem && row.source_system !== filters.sourceSystem) return false;
+    if (
+      filters.accountStage &&
+      !row.fundraising_accounts.some((accountLink) => accountLink.fundraising_account?.stage === filters.accountStage)
+    ) {
+      return false;
+    }
+
+    if (fromDate || toDate) {
+      if (!row.occurred_at) return false;
+      const occurredAt = new Date(row.occurred_at);
+      if (fromDate && occurredAt < fromDate) return false;
+      if (toDate && occurredAt > toDate) return false;
+    }
+
+    return true;
+  });
   const now = Date.now();
   const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
 
   return {
-    source: allRows.length ? 'supabase' : 'empty',
+    source: rows.length ? 'supabase' : 'empty',
     totalInteractions: count ?? allRows.length,
-    verifiedInteractions: rows.length,
-    reviewInteractions: reviewRows.length,
+    filteredInteractions: rows.length,
     recentInteractions: rows.filter((row) => row.occurred_at && now - new Date(row.occurred_at).getTime() <= fourteenDaysMs).length,
     withContacts: rows.filter((row) => row.contacts.length > 0).length,
     withOrganizations: rows.filter((row) => row.organizations.length > 0).length,
     rows,
-    reviewRows
+    filterOptions: {
+      interactionTypes: uniqueValues(allRows.map((row) => row.interaction_type)),
+      sourceSystems: uniqueValues(allRows.map((row) => row.source_system)),
+      accountStages: uniqueValues(
+        allRows.flatMap((row) => row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage))
+      )
+    },
+    activeFilterCount: countActiveFilters([
+      filters.query,
+      filters.interactionType,
+      filters.sourceSystem,
+      filters.accountStage,
+      filters.fromDate,
+      filters.toDate
+    ])
   };
 }
 

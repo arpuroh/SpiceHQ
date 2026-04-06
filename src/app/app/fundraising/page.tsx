@@ -1,212 +1,106 @@
 import Link from 'next/link';
-import { EmptyState, FilterSummary, MetricCard, PageHeader } from '@/components/crm-ui';
 import { createClient } from '@/lib/supabase/server';
-import { formatUsd, getFundraisingPageData, matchesFundraisingQuery } from '@/lib/data/fundraising';
-import { formatReviewFlags } from '@/lib/data/record-quality';
+import { formatUsd, getFundraisingPageData } from '@/lib/data/fundraising';
+import { getSearchParam, normalizeOptionalFilter } from '@/lib/data/filters';
 
 type FundraisingPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function getParam(value: string | string[] | undefined) {
-  if (Array.isArray(value)) return value[0] ?? '';
-  return value ?? '';
-}
-
 export default async function FundraisingPage({ searchParams }: FundraisingPageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const saved = getParam(resolvedSearchParams.saved);
-  const error = getParam(resolvedSearchParams.error);
-  const reviewMode = getParam(resolvedSearchParams.view) === 'review';
-  const query = getParam(resolvedSearchParams.q).trim();
-  const stage = getParam(resolvedSearchParams.stage).trim();
-  const organizationType = getParam(resolvedSearchParams.type).trim();
-  const status = getParam(resolvedSearchParams.status).trim();
-
+  const filters = {
+    query: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.q)),
+    stage: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.stage)),
+    status: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.status)),
+    organizationType: normalizeOptionalFilter(getSearchParam(resolvedSearchParams.organization_type))
+  };
   const supabase = await createClient();
-  const data = await getFundraisingPageData(supabase);
-
-  const allRows = reviewMode ? data.reviewRows : data.rows;
-  const filteredRows = allRows.filter((row) => {
-    if (stage && row.stage !== stage) return false;
-    if (organizationType && (row.organization?.organization_type ?? '') !== organizationType) return false;
-    if (status && row.status !== status) return false;
-    if (!matchesFundraisingQuery(row, query)) return false;
-    return true;
-  });
-
-  const stageOptions = Array.from(new Set(allRows.map((row) => row.stage).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  const typeOptions = Array.from(
-    new Set(allRows.map((row) => row.organization?.organization_type).filter((value): value is string => Boolean(value)))
-  ).sort((a, b) => a.localeCompare(b));
-  const statusOptions = Array.from(new Set(allRows.map((row) => row.status).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-
-  const activeFilterCount = [query, stage, organizationType, status].filter(Boolean).length;
-  const resultLabel = reviewMode ? 'flagged rows' : 'visible rows';
+  const data = await getFundraisingPageData(supabase, filters);
 
   return (
-    <div className="pageStack">
-      <PageHeader
-        eyebrow="Fundraising"
-        title="Verified investor pipeline"
-        description={
-          <>
-            The default view focuses on real organizations and active fundraising records. Search and filters make it practical to
-            work the pipeline, while review mode keeps inactive or synthetic rows available without letting them dominate the table.
-          </>
-        }
-        meta={
-          <>
-            <div className="sourceBadge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
-            <div className="badge">{reviewMode ? 'Review mode' : 'Primary pipeline'}</div>
-          </>
-        }
-        actions={[
-          {
-            href: reviewMode ? '/app/fundraising' : '/app/fundraising?view=review',
-            label: reviewMode ? 'Hide review queue' : `Review queue (${data.reviewAccounts})`,
-            variant: 'secondary'
-          }
-        ]}
-      />
-
-      {saved ? <div className="successBanner">Pipeline record updated.</div> : null}
-      {error ? <div className="errorBanner">{error}</div> : null}
-
-      <div className="grid grid-4">
-        <MetricCard label="Verified accounts" value={data.verifiedAccounts} note="Active and credible pipeline rows" tone="accent" />
-        <MetricCard label="Review queue" value={data.reviewAccounts} note="Inactive, fake, or redacted fundraising rows" tone="review" />
-        <MetricCard label="Soft circled" value={formatUsd(data.totalSoftCircled)} note="Verified active accounts only" tone="success" />
-        <MetricCard label="Committed" value={formatUsd(data.totalCommitted)} note="Current committed total in the working pipeline" />
+    <div className="container">
+      <div className="topbar">
+        <div>
+          <div className="badge">Fundraising</div>
+          <h1 style={{ margin: '12px 0 8px', fontSize: 36 }}>Investor / fundraising table</h1>
+          <div className="subtle">
+            First real data-backed table from Supabase. Sorted by target commitment. Showing the top 250 rows for now.
+          </div>
+        </div>
+        <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
       </div>
 
-      <div className="grid grid-2">
-        <section className="panel">
-          <div className="panelHeader">
-            <div className="panelTitleGroup">
-              <h2 className="sectionTitle">Stage mix</h2>
-              <div className="subtle">Current verified pipeline by stage.</div>
-            </div>
-          </div>
-          <div className="stageList">
-            {data.stageCounts.length ? (
-              data.stageCounts.map((item) => (
-                <div key={item.stage} className="stageItem">
-                  <div className="splitRow">
-                    <strong>{item.stage}</strong>
-                    <span className="badge">{item.count}</span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyState
-                title="No verified fundraising rows"
-                detail="Once active investor accounts are available, the pipeline stage mix will show up here."
-              />
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panelHeader">
-            <div className="panelTitleGroup">
-              <h2 className="sectionTitle">Pipeline posture</h2>
-              <div className="subtle">Quick operating summary from the cleaned dataset.</div>
-            </div>
-          </div>
-          <div className="activityList">
-            <div className="activityItem">Active accounts in default view: <strong>{data.activeAccounts}</strong></div>
-            <div className="activityItem">Total target across verified accounts: <strong>{formatUsd(data.totalTarget)}</strong></div>
-            <div className="activityItem">Imported accounts held in review: <strong>{data.reviewAccounts}</strong></div>
-            <div className="activityItem">Organizations in the database: <strong>{data.totalOrganizations}</strong></div>
-          </div>
-        </section>
+      <div className="grid grid-4" style={{ marginBottom: 24 }}>
+        <section className="panel"><div className="kpiTitle">Accounts</div><div className="kpiValue">{data.filteredAccounts}</div></section>
+        <section className="panel"><div className="kpiTitle">Target</div><div className="kpiValue">{formatUsd(data.totalTarget)}</div></section>
+        <section className="panel"><div className="kpiTitle">Soft circled</div><div className="kpiValue">{formatUsd(data.totalSoftCircled)}</div></section>
+        <section className="panel"><div className="kpiTitle">Committed</div><div className="kpiValue">{formatUsd(data.totalCommitted)}</div></section>
       </div>
 
-      <section className={`panel${reviewMode ? ' reviewPanel' : ''}`}>
+      <section className="panel">
         <div className="panelHeader">
-          <div className="panelTitleGroup">
-            <h2 className="sectionTitle">{reviewMode ? 'Fundraising review queue' : 'Primary pipeline'}</h2>
+          <div>
+            <h2 className="sectionTitle">Accounts</h2>
             <div className="subtle">
-              {reviewMode
-                ? 'Flagged records held back from the main fundraising workflow.'
-                : 'Searchable working table sorted from the verified fundraising dataset.'}
+              Showing {data.filteredAccounts} of {data.totalAccounts} fundraising accounts
+              {data.activeFilterCount ? ` with ${data.activeFilterCount} active filter${data.activeFilterCount === 1 ? '' : 's'}` : ''}.
             </div>
           </div>
-          <div className={`statusBadge ${reviewMode ? 'statusBadge-amber' : 'statusBadge-green'}`}>
-            {filteredRows.length} {resultLabel}
-          </div>
+          {data.activeFilterCount ? (
+            <Link href="/app/fundraising" className="secondaryButton">Clear filters</Link>
+          ) : null}
         </div>
 
-        <div className="toolbar">
-          <form className="toolbarForm" method="get">
-            {reviewMode ? <input type="hidden" name="view" value="review" /> : null}
-            <label className="fieldGroup fieldGroup-search">
-              <span className="fieldLabel">Search</span>
+        <form className="filterPanel">
+          <div className="filterGrid filterGrid4">
+            <label className="field">
+              <span>Search</span>
               <input
-                type="search"
                 name="q"
-                defaultValue={query}
-                placeholder="Investor, memo, stage, HQ, or tag"
+                defaultValue={filters.query ?? ''}
+                placeholder="Investor, memo, tag, HQ"
               />
             </label>
 
-            <label className="fieldGroup">
-              <span className="fieldLabel">Stage</span>
-              <select name="stage" defaultValue={stage}>
+            <label className="field">
+              <span>Stage</span>
+              <select name="stage" defaultValue={filters.stage ?? ''}>
                 <option value="">All stages</option>
-                {stageOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
+                {data.filterOptions.stages.map((stage) => (
+                  <option key={stage} value={stage}>{stage}</option>
                 ))}
               </select>
             </label>
 
-            <label className="fieldGroup">
-              <span className="fieldLabel">Organization type</span>
-              <select name="type" defaultValue={organizationType}>
-                <option value="">All types</option>
-                {typeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="fieldGroup">
-              <span className="fieldLabel">Status</span>
-              <select name="status" defaultValue={status}>
+            <label className="field">
+              <span>Status</span>
+              <select name="status" defaultValue={filters.status ?? ''}>
                 <option value="">All statuses</option>
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
+                {data.filterOptions.statuses.map((status) => (
+                  <option key={status} value={status}>{status}</option>
                 ))}
               </select>
             </label>
 
-            <div className="toolbarActions">
-              <button type="submit" className="primaryButton">Apply filters</button>
-              <Link href={reviewMode ? '/app/fundraising?view=review' : '/app/fundraising'} className="secondaryButton">
-                Reset
-              </Link>
-            </div>
-          </form>
-
-          <div className="toolbarSummary">
-            <FilterSummary
-              heading={activeFilterCount ? 'Filtered results' : reviewMode ? 'Review queue' : 'Working set'}
-              detail={
-                activeFilterCount
-                  ? `${filteredRows.length} matches across ${allRows.length} ${resultLabel}.`
-                  : `${allRows.length} ${resultLabel} available in this view.`
-              }
-            />
-            {!reviewMode ? <div className="badge">Verified rows sorted by target commitment</div> : <div className="badge">Flags and cleanup targets</div>}
+            <label className="field">
+              <span>Organization type</span>
+              <select name="organization_type" defaultValue={filters.organizationType ?? ''}>
+                <option value="">All types</option>
+                {data.filterOptions.organizationTypes.map((organizationType) => (
+                  <option key={organizationType} value={organizationType}>{organizationType}</option>
+                ))}
+              </select>
+            </label>
           </div>
-        </div>
+
+          <div className="buttonRow">
+            <button type="submit" className="primaryButton">Apply filters</button>
+            {data.activeFilterCount ? (
+              <Link href="/app/fundraising" className="secondaryButton">Reset</Link>
+            ) : null}
+          </div>
+        </form>
 
         <div className="tableWrap">
           <table className="table">
@@ -214,65 +108,34 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
               <tr>
                 <th>Investor</th>
                 <th>Stage</th>
-                <th>Status</th>
                 <th>Type</th>
                 <th>HQ</th>
+                <th>Probability</th>
                 <th>Target</th>
                 <th>Soft circled</th>
                 <th>Committed</th>
-                <th>{reviewMode ? 'Flags' : 'Notes'}</th>
+                <th>Notes</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length ? (
-                filteredRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      {row.organization ? (
-                        <Link href={`/app/organizations/${row.organization.id}`} className="tableTitle">
-                          {row.organization.name}
-                        </Link>
-                      ) : (
-                        <div className="tableTitle">Unknown organization</div>
-                      )}
-                      <div className="tableSubtle">
-                        {row.organization?.tags?.slice(0, 3).join(' · ') || 'No tags yet'}
-                      </div>
-                    </td>
-                    <td>{row.stage}</td>
-                    <td>
-                      <div>{row.status}</div>
-                      <div className="tableSubtle">{row.relationship_temperature ?? 'No temperature set'}</div>
-                    </td>
-                    <td>{row.organization?.organization_type ?? '—'}</td>
-                    <td>{row.organization?.headquarters ?? '—'}</td>
-                    <td>{formatUsd(row.target_commitment)}</td>
-                    <td>{formatUsd(row.soft_circled_amount)}</td>
-                    <td>{formatUsd(row.committed_amount)}</td>
-                    <td className="tableNote">
-                      {reviewMode
-                        ? formatReviewFlags(row.review_flags).join(' · ') || 'Needs review'
-                        : row.memo ?? '—'}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9}>
-                    <EmptyState
-                      title="No fundraising rows match the current filters"
-                      detail={
-                        activeFilterCount
-                          ? 'Try broadening the search, clearing one of the filters, or switching between primary and review mode.'
-                          : 'No fundraising rows are available in this view yet.'
-                      }
-                      action={
-                        <Link href={reviewMode ? '/app/fundraising?view=review' : '/app/fundraising'} className="secondaryButton">
-                          Clear filters
-                        </Link>
-                      }
-                    />
+              {data.rows.length ? data.rows.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    <strong>{row.organization?.name ?? 'Unknown organization'}</strong>
+                    <div className="tableSubtle">{row.organization?.tags?.slice(0, 3).join(' · ') || 'No tags yet'}</div>
                   </td>
+                  <td>{row.stage}</td>
+                  <td>{row.organization?.organization_type ?? '—'}</td>
+                  <td>{row.organization?.headquarters ?? '—'}</td>
+                  <td>{row.probability_pct ?? '—'}{row.probability_pct !== null ? '%' : ''}</td>
+                  <td>{formatUsd(row.target_commitment)}</td>
+                  <td>{formatUsd(row.soft_circled_amount)}</td>
+                  <td>{formatUsd(row.committed_amount)}</td>
+                  <td>{row.memo ?? '—'}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={9} className="subtle">No fundraising rows available yet.</td>
                 </tr>
               )}
             </tbody>

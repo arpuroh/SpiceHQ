@@ -63,7 +63,7 @@ export default async function ContactDetailPage({ params, searchParams }: Contac
       {error ? <div className="errorBanner">{error}</div> : null}
       {contact.quality === 'review' ? (
         <div className="reviewBanner">
-          This contact is currently flagged for review: {formatReviewFlags(contact.review_flags).join(' · ')}.
+          This contact is currently flagged for review: {formatReviewFlags(contact.review_flags ?? []).join(' · ')}.
         </div>
       ) : null}
 
@@ -199,7 +199,7 @@ export default async function ContactDetailPage({ params, searchParams }: Contac
               </div>
               <div className="activityItem">
                 <strong>Flags</strong>
-                <div className="tableSubtle">{formatReviewFlags(contact.review_flags).join(' · ') || 'No review flags detected.'}</div>
+                <div className="tableSubtle">{formatReviewFlags(contact.review_flags ?? []).join(' · ') || 'No review flags detected.'}</div>
               </div>
             </div>
           </section>
