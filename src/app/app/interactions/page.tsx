@@ -20,10 +20,14 @@ export default async function InteractionsPage({ searchParams }: InteractionsPag
   const resolvedSearchParams = (await searchParams) ?? {};
   const query = getParam(resolvedSearchParams.q).trim().toLowerCase();
   const organizationFilter = getParam(resolvedSearchParams.organization).trim();
+  const typeFilter = getParam(resolvedSearchParams.type).trim();
+  const sourceFilter = getParam(resolvedSearchParams.source).trim();
   const supabase = await createClient();
   const data = await getInteractionsPageData(supabase);
   const filteredRows = data.rows.filter((row) => {
     if (organizationFilter && !row.organizations.some((organizationLink) => organizationLink.organization?.id === organizationFilter)) return false;
+    if (typeFilter && (row.interaction_type ?? '') !== typeFilter) return false;
+    if (sourceFilter && (row.source_system ?? '') !== sourceFilter) return false;
     if (!query) return true;
 
     const haystack = [
@@ -42,6 +46,9 @@ export default async function InteractionsPage({ searchParams }: InteractionsPag
 
     return haystack.includes(query);
   });
+  const typeOptions = Array.from(new Set(data.rows.map((row) => row.interaction_type).filter((value): value is string => Boolean(value)))).sort();
+  const sourceOptions = Array.from(new Set(data.rows.map((row) => row.source_system).filter((value): value is string => Boolean(value)))).sort();
+  const activeFilterCount = [query, organizationFilter, typeFilter, sourceFilter].filter(Boolean).length;
 
   return (
     <div className="container">
@@ -66,6 +73,38 @@ export default async function InteractionsPage({ searchParams }: InteractionsPag
         <section className="panel"><div className="kpiTitle">With orgs</div><div className="kpiValue">{data.withOrganizations}</div></section>
       </div>
 
+      {!activeFilterCount ? (
+        <section className="panel" style={{ marginBottom: 24 }}>
+          <div className="panelHeader">
+            <div>
+              <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Organization touch trails</h2>
+              <div className="subtle">Recent high-context interactions grouped around real organizations.</div>
+            </div>
+          </div>
+          <div className="activityList">
+            {filteredRows.slice(0, 8).map((row) => {
+              const primaryOrg = row.organizations.find((link) => link.organization)?.organization ?? null;
+              return (
+                <div key={row.id} className="activityItem">
+                  <div className="splitRow">
+                    <strong>{row.subject ?? row.interaction_type ?? 'Untitled interaction'}</strong>
+                    <span className="badge">{formatDateTime(row.occurred_at)}</span>
+                  </div>
+                  <div className="tableSubtle">{formatInteractionSummary(row)}</div>
+                  <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                    {primaryOrg ? <Link href={`/app/organizations/${primaryOrg.id}`} className="inlineLink">{primaryOrg.name}</Link> : <span>No org link</span>}
+                    {primaryOrg ? <span>·</span> : null}
+                    {primaryOrg ? <Link href={`/app/fundraising?organization=${primaryOrg.id}`} className="inlineLink">Pipeline</Link> : null}
+                    {primaryOrg ? <span>·</span> : null}
+                    {primaryOrg ? <Link href={`/app/contacts?organization=${primaryOrg.id}`} className="inlineLink">Contacts</Link> : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       <section className="panel">
         <div className="panelHeader">
           <div>
@@ -82,7 +121,20 @@ export default async function InteractionsPage({ searchParams }: InteractionsPag
               <option key={org.id} value={org.id}>{org.name}</option>
             ))}
           </select>
+          <select name="type" defaultValue={typeFilter} className="filterSelect">
+            <option value="">All types</option>
+            {typeOptions.map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+          <select name="source" defaultValue={sourceFilter} className="filterSelect">
+            <option value="">All sources</option>
+            {sourceOptions.map((source) => (
+              <option key={source} value={source}>{source}</option>
+            ))}
+          </select>
           <button type="submit" className="secondaryButton">Filter</button>
+          <Link href="/app/interactions" className="secondaryButton">Reset</Link>
         </form>
         <div className="tableWrap">
           <table className="table">
@@ -135,6 +187,13 @@ export default async function InteractionsPage({ searchParams }: InteractionsPag
                           <Link href={`/app/organizations/${organization!.id}`} className="inlineLink">{organization!.name}</Link>
                         </span>
                       )) : '—'}
+                      {organizationEntries.length ? (
+                        <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                          <Link href={`/app/fundraising?organization=${organizationEntries[0]!.id}`} className="inlineLink">Pipeline</Link>
+                          <span>·</span>
+                          <Link href={`/app/contacts?organization=${organizationEntries[0]!.id}`} className="inlineLink">Contacts</Link>
+                        </div>
+                      ) : null}
                     </td>
                     <td>{accountStages || '—'}</td>
                   </tr>

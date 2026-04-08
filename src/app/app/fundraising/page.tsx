@@ -16,17 +16,23 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
   const resolvedSearchParams = (await searchParams) ?? {};
   const query = getParam(resolvedSearchParams.q).trim();
   const organizationFilter = getParam(resolvedSearchParams.organization).trim();
+  const stageFilter = getParam(resolvedSearchParams.stage).trim();
+  const statusFilter = getParam(resolvedSearchParams.status).trim();
   const supabase = await createClient();
   const data = await getFundraisingPageData(supabase);
   const filteredRows = data.rows.filter((row) => {
     if (organizationFilter && (row.organization?.id ?? '') !== organizationFilter) return false;
+    if (stageFilter && row.stage !== stageFilter) return false;
+    if (statusFilter && row.status !== statusFilter) return false;
     if (query && !matchesFundraisingQuery(row, query)) return false;
     return true;
   });
   const organizationOptions = Array.from(
     new Map(data.rows.filter((row) => row.organization).map((row) => [row.organization!.id, row.organization!])).values()
   );
-  const activeFilterCount = [query, organizationFilter].filter(Boolean).length;
+  const stageOptions = Array.from(new Set(data.rows.map((row) => row.stage).filter(Boolean))).sort();
+  const statusOptions = Array.from(new Set(data.rows.map((row) => row.status).filter(Boolean))).sort();
+  const activeFilterCount = [query, organizationFilter, stageFilter, statusFilter].filter(Boolean).length;
 
   return (
     <div className="pageStack">
@@ -58,6 +64,40 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
         <MetricCard label="Committed" value={formatUsd(data.totalCommitted)} note="Hard committed capital" />
       </div>
 
+      {!activeFilterCount ? (
+        <section className="panel">
+          <div className="panelHeader">
+            <div className="panelTitleGroup">
+              <h2 className="sectionTitle">Organization fundraising lanes</h2>
+              <div className="subtle">Use the organization as the operating hub, then jump into pipeline, contacts, and relationship history.</div>
+            </div>
+          </div>
+
+          <div className="activityList">
+            {filteredRows.slice(0, 8).map((row) => (
+              <div key={row.id} className="activityItem">
+                <div className="splitRow">
+                  <Link href={row.organization ? `/app/organizations/${row.organization.id}` : '/app/fundraising'} className="tableTitle">
+                    {row.organization?.name ?? 'Unknown organization'}
+                  </Link>
+                  <span className="badge">{row.stage}</span>
+                </div>
+                <div className="tableSubtle">
+                  {[row.organization?.organization_type, row.organization?.headquarters, row.relationship_temperature].filter(Boolean).join(' · ') || 'No extra context yet'}
+                </div>
+                <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                  {row.organization ? <Link href={`/app/organizations/${row.organization.id}`} className="inlineLink">Organization</Link> : null}
+                  {row.organization ? <span>·</span> : null}
+                  {row.organization ? <Link href={`/app/contacts?organization=${row.organization.id}`} className="inlineLink">Contacts</Link> : null}
+                  {row.organization ? <span>·</span> : null}
+                  {row.organization ? <Link href={`/app/interactions?organization=${row.organization.id}`} className="inlineLink">Interactions</Link> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {data.hiddenAccounts > 0 ? (
         <div className="successBanner">
           {data.hiddenAccounts} fundraising rows are currently suppressed from the working view. They still exist in the source layer and can be inspected in <Link href="/app/review" className="inlineLink">review</Link>.
@@ -86,6 +126,26 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
                 <option value="">All organizations</option>
                 {organizationOptions.map((organization) => (
                   <option key={organization.id} value={organization.id}>{organization.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="fieldGroup">
+              <span className="fieldLabel">Stage</span>
+              <select name="stage" defaultValue={stageFilter}>
+                <option value="">All stages</option>
+                {stageOptions.map((stage) => (
+                  <option key={stage} value={stage}>{stage}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="fieldGroup">
+              <span className="fieldLabel">Status</span>
+              <select name="status" defaultValue={statusFilter}>
+                <option value="">All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{status}</option>
                 ))}
               </select>
             </label>
@@ -129,6 +189,15 @@ export default async function FundraisingPage({ searchParams }: FundraisingPageP
                       <strong>Unknown organization</strong>
                     )}
                     <div className="tableSubtle">{row.organization?.tags?.slice(0, 3).join(' · ') || 'No tags yet'}</div>
+                    {row.organization ? (
+                      <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                        <Link href={`/app/organizations/${row.organization.id}`} className="inlineLink">Organization</Link>
+                        <span>·</span>
+                        <Link href={`/app/contacts?organization=${row.organization.id}`} className="inlineLink">Contacts</Link>
+                        <span>·</span>
+                        <Link href={`/app/interactions?organization=${row.organization.id}`} className="inlineLink">Interactions</Link>
+                      </div>
+                    ) : null}
                   </td>
                   <td>{row.stage}</td>
                   <td>{row.organization?.organization_type ?? '—'}</td>
