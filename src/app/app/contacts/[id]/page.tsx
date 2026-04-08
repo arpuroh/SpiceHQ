@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { updateContactAction } from '@/app/app/actions';
-import { getContactDetailData } from '@/lib/data/contacts';
+import { ContactEditForm } from '@/components/forms/contact-edit-form';
+import { formatDateTime, getContactDetailData } from '@/lib/data/contacts';
 import { createClient } from '@/lib/supabase/server';
 
 type ContactDetailPageProps = {
@@ -14,11 +14,10 @@ function getMessageParam(value: string | string[] | undefined) {
   return value ?? null;
 }
 
-const statusOptions = ['active', 'prospect', 'warm', 'inactive'];
-
 export default async function ContactDetailPage({ params, searchParams }: ContactDetailPageProps) {
   const { id } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
+  const created = getMessageParam(resolvedSearchParams.created);
   const saved = getMessageParam(resolvedSearchParams.saved);
   const error = getMessageParam(resolvedSearchParams.error);
   const supabase = await createClient();
@@ -30,9 +29,6 @@ export default async function ContactDetailPage({ params, searchParams }: Contac
 
   const contact = data.row;
   const displayName = contact.full_name ?? `${contact.first_name} ${contact.last_name ?? ''}`.trim();
-  const availableStatuses = contact.status && !statusOptions.includes(contact.status)
-    ? [contact.status, ...statusOptions]
-    : statusOptions;
 
   return (
     <div className="container">
@@ -49,96 +45,100 @@ export default async function ContactDetailPage({ params, searchParams }: Contac
         </Link>
       </div>
 
+      {created ? <div className="successBanner">Person added and ready for more editing.</div> : null}
       {saved ? <div className="successBanner">Contact updated.</div> : null}
       {error ? <div className="errorBanner">{error}</div> : null}
-      {data.curation?.hidden ? (
-        <div className="warningBanner">
-          Hidden from the default contacts view.
-          <div className="tableSubtle" style={{ color: 'inherit' }}>
-            {data.curation.reasons.map((reason) => reason.detail).join(' ')}
-          </div>
-        </div>
-      ) : null}
 
-      <section className="panel">
-        <div className="panelHeader">
-          <div>
-            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Edit contact</h2>
-            <div className="subtle">
-              Created {contact.created_at ? new Date(contact.created_at).toLocaleString('en-US') : 'unknown'}
+      <div className="grid gridDetail">
+        <section className="panel">
+          <div className="panelHeader">
+            <div>
+              <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Edit contact</h2>
+              <div className="subtle">Created {formatDateTime(contact.created_at)}</div>
             </div>
           </div>
-        </div>
 
-        <form action={updateContactAction} className="stack">
-          <input type="hidden" name="contact_id" value={contact.id} />
+          <ContactEditForm contact={contact} organizationOptions={data.organizationOptions} />
+        </section>
 
-          <div className="formGrid formGrid2">
-            <label className="field">
-              <span>First name</span>
-              <input name="first_name" required defaultValue={contact.first_name} />
-            </label>
-            <label className="field">
-              <span>Last name</span>
-              <input name="last_name" required defaultValue={contact.last_name ?? ''} />
-            </label>
-          </div>
+        <aside className="stack">
+          <section className="panel">
+            <h2 className="sectionTitle">Relationship workspace</h2>
+            <div className="chipStack">
+              {contact.primary_organization ? (
+                <Link href={`/app/organizations/${contact.primary_organization.id}`} className="relationChip">
+                  <strong>Primary organization</strong>
+                  <span>{contact.primary_organization.name}</span>
+                </Link>
+              ) : null}
 
-          <div className="formGrid formGrid2">
-            <label className="field">
-              <span>Title</span>
-              <input name="job_title" defaultValue={contact.job_title ?? ''} />
-            </label>
-            <label className="field">
-              <span>Status</span>
-              <select name="status" defaultValue={contact.status ?? 'active'}>
-                {availableStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+              <Link href={`/app/contacts?${contact.primary_organization ? `organization=${contact.primary_organization.id}` : `q=${encodeURIComponent(displayName)}`}`} className="relationChip">
+                <strong>Related contacts</strong>
+                <span>{contact.primary_organization ? 'See the rest of the team at this org.' : 'Return to the broader people view.'}</span>
+              </Link>
 
-          <div className="formGrid formGrid2">
-            <label className="field">
-              <span>Email</span>
-              <input name="email" type="email" defaultValue={contact.email ?? ''} />
-            </label>
-            <label className="field">
-              <span>LinkedIn URL</span>
-              <input name="linkedin_url" type="url" defaultValue={contact.linkedin_url ?? ''} />
-            </label>
-          </div>
+              {contact.primary_organization ? (
+                <Link href={`/app/fundraising?organization=${contact.primary_organization.id}`} className="relationChip">
+                  <strong>Fundraising context</strong>
+                  <span>Jump into the pipeline tied to this organization.</span>
+                </Link>
+              ) : null}
 
-          <label className="field">
-            <span>Primary organization</span>
-            <select name="organization_id" defaultValue={contact.primary_organization?.id ?? ''}>
-              <option value="">No primary organization</option>
-              {data.organizationOptions.map((organization) => (
-                <option key={organization.id} value={organization.id}>
-                  {organization.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              {contact.primary_organization ? (
+                <Link href={`/app/interactions?organization=${contact.primary_organization.id}`} className="relationChip">
+                  <strong>Interaction history</strong>
+                  <span>Open touchpoints connected to this relationship.</span>
+                </Link>
+              ) : null}
 
-          <label className="field">
-            <span>Notes</span>
-            <textarea name="notes" rows={8} defaultValue={contact.notes ?? ''} />
-          </label>
+              {contact.primary_organization ? (
+                <Link href={`/app/tasks?organization=${contact.primary_organization.id}`} className="relationChip">
+                  <strong>Follow-up queue</strong>
+                  <span>See active tasks around this organization.</span>
+                </Link>
+              ) : null}
+            </div>
+          </section>
 
-          <div className="buttonRow">
-            <button type="submit" className="primaryButton">
-              Save contact
-            </button>
-            <Link href="/app/contacts" className="secondaryButton">
-              Cancel
-            </Link>
-          </div>
-        </form>
-      </section>
+          <section className="panel">
+            <h2 className="sectionTitle">Snapshot</h2>
+            <div className="detailList">
+              <div className="detailRow"><span>Status</span><strong>{contact.status ?? '—'}</strong></div>
+              <div className="detailRow"><span>Email</span><strong>{contact.email ?? '—'}</strong></div>
+              <div className="detailRow"><span>Phone</span><strong>{contact.phone ?? '—'}</strong></div>
+              <div className="detailRow"><span>Preferred channel</span><strong>{contact.preferred_channel ?? '—'}</strong></div>
+            </div>
+            {contact.linkedin_url ? (
+              <div style={{ marginTop: 16 }}>
+                <a href={contact.linkedin_url} target="_blank" rel="noreferrer" className="secondaryButton">
+                  Open LinkedIn
+                </a>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="panel">
+            <h2 className="sectionTitle">Organizations</h2>
+            {contact.organizations.length ? (
+              <div className="chipStack">
+                {contact.organizations.map((organizationLink) => {
+                  const organization = organizationLink.organization;
+                  if (!organization) return null;
+
+                  return (
+                    <Link key={organization.id} href={`/app/organizations/${organization.id}`} className="relationChip">
+                      <strong>{organization.name}</strong>
+                      <span>{organizationLink.is_primary ? 'Primary relationship' : organizationLink.relationship_type ?? 'Related'}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="subtle">No organization links yet.</div>
+            )}
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { addNoteAction } from '@/app/app/actions';
 import { PageHeader, MetricCard } from '@/components/crm-ui';
 import { createClient } from '@/lib/supabase/server';
-import { formatDateTime, getNotePreview, getNotesPageData, matchesNoteQuery } from '@/lib/data/notes';
+import { formatDateTime, getNoteContactName, getNotePreview, getNotesPageData, matchesNoteQuery } from '@/lib/data/notes';
 import { formatReviewFlags } from '@/lib/data/record-quality';
 
 type NotesPageProps = {
@@ -20,15 +20,21 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
   const error = getParam(resolvedSearchParams.error);
   const reviewMode = getParam(resolvedSearchParams.view) === 'review';
   const query = getParam(resolvedSearchParams.q).trim();
+  const organizationFilter = getParam(resolvedSearchParams.organization).trim();
+  const contactFilter = getParam(resolvedSearchParams.contact).trim();
 
   const supabase = await createClient();
   const data = await getNotesPageData(supabase);
 
   const allRows = reviewMode ? data.reviewRows : data.rows;
   const filteredRows = allRows.filter((row) => {
+    if (organizationFilter && (row.organization?.id ?? '') !== organizationFilter) return false;
+    if (contactFilter && (row.contact?.id ?? '') !== contactFilter) return false;
     if (query && !matchesNoteQuery(row, query)) return false;
     return true;
   });
+
+  const activeFilterCount = [query, organizationFilter, contactFilter].filter(Boolean).length;
 
   return (
     <div className="pageStack">
@@ -65,6 +71,31 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
         <MetricCard label="Review queue" value={data.reviewNotes} note="Needs triage" />
       </div>
 
+      {!reviewMode && activeFilterCount === 0 ? (
+        <section className="panel">
+          <div className="panelHeader">
+            <div className="panelTitleGroup">
+              <h2 className="sectionTitle">Organization note trails</h2>
+              <div className="subtle">Jump into the organizations carrying the most note context.</div>
+            </div>
+          </div>
+          <div className="activityList">
+            {data.organizationOptions.slice(0, 8).map((org) => (
+              <div key={org.id} className="activityItem">
+                <Link href={`/app/organizations/${org.id}`} className="tableTitle">{org.name}</Link>
+                <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                  <Link href={`/app/notes?organization=${org.id}`} className="inlineLink">View notes</Link>
+                  <span>·</span>
+                  <Link href={`/app/interactions?organization=${org.id}`} className="inlineLink">Open interactions</Link>
+                  <span>·</span>
+                  <Link href={`/app/tasks?organization=${org.id}`} className="inlineLink">Open tasks</Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid grid-2">
         <section className="panel">
           <div className="panelHeader">
@@ -76,9 +107,24 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
           </div>
 
           <form method="get" action="/app/notes" className="filterBar">
-            <input type="text" name="q" placeholder="Search notes…" defaultValue={query} className="filterInput" />
+            <input type="text" name="q" placeholder="Search note, org, or contact…" defaultValue={query} className="filterInput" />
+            <select name="organization" defaultValue={organizationFilter} className="filterSelect">
+              <option value="">All organizations</option>
+              {data.organizationOptions.map((org) => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
+            <select name="contact" defaultValue={contactFilter} className="filterSelect">
+              <option value="">All contacts</option>
+              {data.contactOptions.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contact.full_name ?? `${contact.first_name} ${contact.last_name ?? ''}`.trim()}
+                </option>
+              ))}
+            </select>
             {reviewMode && <input type="hidden" name="view" value="review" />}
             <button type="submit" className="secondaryButton">Search</button>
+            <Link href={reviewMode ? '/app/notes?view=review' : '/app/notes'} className="secondaryButton">Reset</Link>
           </form>
 
           <div className="activityList">
@@ -98,13 +144,29 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
                     <span className="badge">{formatDateTime(row.created_at)}</span>
                   </div>
                   <div className="tableSubtle">{getNotePreview(row.body)}</div>
-                  <div className="tableSubtle">
-                    {[
-                      row.organization ? row.organization.name : null,
-                      row.contact ? (row.contact.full_name ?? `${row.contact.first_name} ${row.contact.last_name ?? ''}`.trim()) : null
-                    ].filter(Boolean).join(' · ') || 'No linked context'}
+                  <div className="tableSubtle contextLinksRow">
+                    {row.organization ? (
+                      <Link href={`/app/organizations/${row.organization.id}`} className="inlineLink">
+                        {row.organization.name}
+                      </Link>
+                    ) : null}
+                    {row.contact ? (
+                      <>
+                        {row.organization ? <span>·</span> : null}
+                        <Link href={`/app/contacts/${row.contact.id}`} className="inlineLink">
+                          {getNoteContactName(row.contact)}
+                        </Link>
+                      </>
+                    ) : null}
+                    {row.organization ? (
+                      <>
+                        <span>·</span>
+                        <Link href={`/app/interactions?organization=${row.organization.id}`} className="inlineLink">Interactions</Link>
+                      </>
+                    ) : null}
+                    {!row.organization && !row.contact ? <span>No linked context</span> : null}
                     {row.quality === 'review' && (
-                      <span style={{ color: 'var(--review)', marginLeft: '0.5rem' }}>
+                      <span style={{ color: 'var(--review)' }}>
                         ({formatReviewFlags(row.review_flags).join(', ')})
                       </span>
                     )}
@@ -115,7 +177,7 @@ export default async function NotesPage({ searchParams }: NotesPageProps) {
               <div className="emptyState">
                 <div className="emptyStateTitle">{query ? 'No matches' : 'No notes yet'}</div>
                 <div className="emptyStateBody">
-                  {query ? 'Try a different search term.' : 'Capture your first note using the form.'}
+                  {query || organizationFilter ? 'Try a different search term.' : 'Capture your first note using the form.'}
                 </div>
               </div>
             )}

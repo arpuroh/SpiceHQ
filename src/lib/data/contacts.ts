@@ -1,15 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import {
-  curateContactLikeRecord,
-  curateRecords,
-  type CuratedReason
-} from '@/lib/data/curation';
+import { curateContactLikeRecord, curateRecords, type CuratedReason } from '@/lib/data/curation';
 
 export interface ContactOrganization {
   id: string;
   name: string;
   organization_type: string | null;
   headquarters: string | null;
+  website?: string | null;
+  linkedin_url?: string | null;
+  preferred_channel?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
 }
 
 export interface ContactRow {
@@ -34,6 +35,19 @@ export interface ContactRow {
   }>;
 }
 
+export interface OrganizationContactRow {
+  is_primary: boolean | null;
+  relationship_type: string | null;
+  title: string | null;
+  contact: Pick<ContactRow, 'id' | 'full_name' | 'first_name' | 'last_name' | 'email' | 'linkedin_url' | 'status'> | null;
+}
+
+export interface OrganizationDetailData {
+  source: 'supabase' | 'empty';
+  row: ContactOrganization | null;
+  relatedContacts: OrganizationContactRow[];
+}
+
 interface ContactQueryRow extends Omit<ContactRow, 'primary_organization' | 'organizations'> {
   primary_organization: ContactOrganization | ContactOrganization[] | null;
   organizations:
@@ -42,6 +56,20 @@ interface ContactQueryRow extends Omit<ContactRow, 'primary_organization' | 'org
         relationship_type: string | null;
         title: string | null;
         organization: ContactOrganization | ContactOrganization[] | null;
+      }>
+    | null;
+}
+
+interface OrganizationQueryRow extends ContactOrganization {
+  related_contacts:
+    | Array<{
+        is_primary: boolean | null;
+        relationship_type: string | null;
+        title: string | null;
+        contact:
+          | Pick<ContactRow, 'id' | 'full_name' | 'first_name' | 'last_name' | 'email' | 'linkedin_url' | 'status'>
+          | Pick<ContactRow, 'id' | 'full_name' | 'first_name' | 'last_name' | 'email' | 'linkedin_url' | 'status'>[]
+          | null;
       }>
     | null;
 }
@@ -55,21 +83,17 @@ export interface ContactPageData {
   withEmail: number;
   recentlyAdded: number;
   rows: ContactRow[];
+  organizationOptions: ContactOrganization[];
+  recentOrganizations: ContactOrganization[];
   hiddenRows: Array<{
     row: ContactRow;
     reasons: CuratedReason[];
   }>;
-  organizationOptions: ContactOrganization[];
 }
 
 export interface ContactDetailData {
   source: 'supabase' | 'empty';
   row: ContactRow | null;
-  curation: {
-    hidden: boolean;
-    score: number;
-    reasons: CuratedReason[];
-  } | null;
   organizationOptions: ContactOrganization[];
 }
 
@@ -89,6 +113,19 @@ function normalizeContactRow(row: ContactQueryRow): ContactRow {
   };
 }
 
+function normalizeOrganizationContactRow(row: OrganizationQueryRow): OrganizationDetailData {
+  return {
+    source: 'supabase',
+    row,
+    relatedContacts: (row.related_contacts ?? []).map((contactLink) => ({
+      ...contactLink,
+      contact: firstRelated(contactLink.contact)
+    }))
+  };
+}
+
+const organizationSelect = 'id, name, organization_type, headquarters, website, linkedin_url, preferred_channel, notes, created_at';
+
 const contactSelect = `
   id,
   full_name,
@@ -103,20 +140,32 @@ const contactSelect = `
   notes,
   created_at,
   primary_organization:organizations!contacts_primary_organization_id_fkey (
-    id,
-    name,
-    organization_type,
-    headquarters
+    ${organizationSelect}
   ),
   organizations:contact_organizations (
     is_primary,
     relationship_type,
     title,
     organization:organizations!contact_organizations_organization_id_fkey (
+      ${organizationSelect}
+    )
+  )
+`;
+
+const organizationDetailSelect = `
+  ${organizationSelect},
+  related_contacts:contact_organizations (
+    is_primary,
+    relationship_type,
+    title,
+    contact:contacts!contact_organizations_contact_id_fkey (
       id,
-      name,
-      organization_type,
-      headquarters
+      full_name,
+      first_name,
+      last_name,
+      email,
+      linkedin_url,
+      status
     )
   )
 `;
@@ -133,22 +182,55 @@ export function formatDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
-export async function getContactsPageData(supabase: SupabaseClient): Promise<ContactPageData> {
-  const [{ data: contactsData, error: contactsError, count }, { data: organizationsData, error: organizationsError }] =
-    await Promise.all([
-      supabase
-        .from('contacts')
-        .select(contactSelect, { count: 'exact' })
-        .order('created_at', { ascending: false, nullsFirst: false })
-        .limit(200),
-      supabase
-        .from('organizations')
-        .select('id, name, organization_type, headquarters')
-        .order('name')
-        .limit(500)
-    ]);
+export function matchesContactQuery(row: ContactRow, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
 
-  if (contactsError || organizationsError) {
+  const haystack = [
+    row.full_name,
+    row.first_name,
+    row.last_name,
+    row.job_title,
+    row.email,
+    row.phone,
+    row.linkedin_url,
+    row.preferred_channel,
+    row.status,
+    row.notes,
+    row.primary_organization?.name,
+    ...row.organizations.map((organizationLink) => organizationLink.organization?.name)
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
+export async function getContactsPageData(supabase: SupabaseClient): Promise<ContactPageData> {
+  const [
+    { data: contactsData, error: contactsError, count },
+    { data: organizationsData, error: organizationsError },
+    { data: recentOrganizationsData, error: recentOrganizationsError }
+  ] = await Promise.all([
+    supabase
+      .from('contacts')
+      .select(contactSelect, { count: 'exact' })
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .limit(200),
+    supabase
+      .from('organizations')
+      .select(organizationSelect)
+      .order('name')
+      .limit(500),
+    supabase
+      .from('organizations')
+      .select(organizationSelect)
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .limit(8)
+  ]);
+
+  if (contactsError || organizationsError || recentOrganizationsError) {
     return {
       source: 'empty',
       totalContacts: 0,
@@ -158,29 +240,33 @@ export async function getContactsPageData(supabase: SupabaseClient): Promise<Con
       withEmail: 0,
       recentlyAdded: 0,
       rows: [],
-      hiddenRows: [],
-      organizationOptions: []
+      organizationOptions: [],
+      recentOrganizations: [],
+      hiddenRows: []
     };
   }
 
   const allRows = (contactsData ?? []).map((row) => normalizeContactRow(row as ContactQueryRow));
   const curated = curateRecords(allRows, (row) => {
     const evaluation = curateContactLikeRecord({
-      identityValues: [row.full_name, row.first_name, row.last_name, row.email],
+      identityValues: [row.full_name, row.first_name, row.last_name],
       markerValues: [
         row.full_name,
         row.first_name,
         row.last_name,
         row.job_title,
         row.email,
+        row.phone,
         row.linkedin_url,
+        row.preferred_channel,
         row.status,
         row.notes,
-        row.primary_organization?.name
+        row.primary_organization?.name,
+        ...row.organizations.map((organizationLink) => organizationLink.organization?.name)
       ],
       hasDirectContactMethod: Boolean(row.email || row.phone || row.linkedin_url),
-      hasProfessionalContext: Boolean(row.job_title),
-      hasOrganizationLink: Boolean(row.primary_organization || row.organizations.length),
+      hasProfessionalContext: Boolean(row.job_title || row.preferred_channel || row.status),
+      hasOrganizationLink: Boolean(row.primary_organization || row.organizations.some((organizationLink) => organizationLink.organization)),
       status: row.status,
       hasNotes: Boolean(row.notes?.trim())
     });
@@ -203,11 +289,12 @@ export async function getContactsPageData(supabase: SupabaseClient): Promise<Con
     withEmail: rows.filter((row) => row.email).length,
     recentlyAdded: rows.filter((row) => row.created_at && now - new Date(row.created_at).getTime() <= thirtyDaysMs).length,
     rows,
+    organizationOptions: (organizationsData ?? []) as ContactOrganization[],
+    recentOrganizations: (recentOrganizationsData ?? []) as ContactOrganization[],
     hiddenRows: curated.hidden.map((item) => ({
       row: item.row,
       reasons: item.reasons
-    })),
-    organizationOptions: (organizationsData ?? []) as ContactOrganization[]
+    }))
   };
 }
 
@@ -217,7 +304,7 @@ export async function getContactDetailData(supabase: SupabaseClient, contactId: 
       supabase.from('contacts').select(contactSelect).eq('id', contactId).maybeSingle(),
       supabase
         .from('organizations')
-        .select('id, name, organization_type, headquarters')
+        .select(organizationSelect)
         .order('name')
         .limit(500)
     ]);
@@ -226,36 +313,34 @@ export async function getContactDetailData(supabase: SupabaseClient, contactId: 
     return {
       source: 'empty',
       row: null,
-      curation: null,
       organizationOptions: []
     };
   }
 
-  const row = normalizeContactRow(contactData as ContactQueryRow);
-  const curation = curateContactLikeRecord({
-    identityValues: [row.full_name, row.first_name, row.last_name, row.email],
-    markerValues: [
-      row.full_name,
-      row.first_name,
-      row.last_name,
-      row.job_title,
-      row.email,
-      row.linkedin_url,
-      row.status,
-      row.notes,
-      row.primary_organization?.name
-    ],
-    hasDirectContactMethod: Boolean(row.email || row.phone || row.linkedin_url),
-    hasProfessionalContext: Boolean(row.job_title),
-    hasOrganizationLink: Boolean(row.primary_organization || row.organizations.length),
-    status: row.status,
-    hasNotes: Boolean(row.notes?.trim())
-  });
-
   return {
     source: 'supabase',
-    row,
-    curation,
+    row: normalizeContactRow(contactData as ContactQueryRow),
     organizationOptions: (organizationsData ?? []) as ContactOrganization[]
   };
+}
+
+export async function getOrganizationDetailData(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<OrganizationDetailData> {
+  const { data, error } = await supabase
+    .from('organizations')
+    .select(organizationDetailSelect)
+    .eq('id', organizationId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return {
+      source: 'empty',
+      row: null,
+      relatedContacts: []
+    };
+  }
+
+  return normalizeOrganizationContactRow(data as OrganizationQueryRow);
 }

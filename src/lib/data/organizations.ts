@@ -8,12 +8,21 @@ export interface OrganizationRow {
   headquarters: string | null;
   website: string | null;
   linkedin_url: string | null;
+  preferred_channel: string | null;
   tags: string[] | null;
-  notes: string | null;
+  sector_focus: string[] | null;
+  description: string | null;
+  internal_notes: string | null;
+  relationship_status: string | null;
   created_at: string | null;
   updated_at: string | null;
   contact_count: number;
   fundraising_count: number;
+  interaction_count: number;
+  task_count: number;
+  note_count: number;
+  portfolio_count: number;
+  last_interaction_at: string | null;
   quality: 'verified' | 'review';
   review_flags: ReviewFlag[];
 }
@@ -25,12 +34,21 @@ interface OrganizationQueryRow {
   headquarters: string | null;
   website: string | null;
   linkedin_url: string | null;
+  preferred_channel: string | null;
   tags: string[] | null;
-  notes: string | null;
+  sector_focus: string[] | null;
+  description: string | null;
+  internal_notes: string | null;
+  relationship_status: string | null;
   created_at: string | null;
   updated_at: string | null;
   contacts: Array<{ count: number }> | null;
   fundraising_accounts: Array<{ count: number }> | null;
+  interaction_organizations: Array<{ count: number }> | null;
+  tasks: Array<{ count: number }> | null;
+  note_links: Array<{ count: number }> | null;
+  portfolio_companies: Array<{ count: number }> | null;
+  latest_interactions: Array<{ occurred_at: string | null }> | null;
 }
 
 export interface OrganizationPageData {
@@ -69,6 +87,30 @@ export interface OrganizationDetailRow extends OrganizationRow {
     subject: string | null;
     summary: string | null;
     occurred_at: string | null;
+    source_system: string | null;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: string | null;
+    priority: string | null;
+    due_at: string | null;
+  }>;
+  notes: Array<{
+    id: string;
+    title: string | null;
+    note_type: string | null;
+    pinned: boolean | null;
+    created_at: string | null;
+    body: string | null;
+  }>;
+  portfolio_companies: Array<{
+    id: string;
+    company_name: string;
+    stage: string | null;
+    status: string | null;
+    investment_amount: number | null;
+    current_valuation: number | null;
   }>;
 }
 
@@ -79,12 +121,17 @@ export interface OrganizationDetailData {
 
 function normalizeOrganizationRow(row: OrganizationQueryRow): OrganizationRow {
   const quality = assessRecordQuality(
-    [row.name, row.organization_type, row.headquarters, row.notes],
+    [row.name, row.organization_type, row.headquarters, row.description],
     { requireIdentity: true }
   );
 
   const contactCount = row.contacts?.[0]?.count ?? 0;
   const fundraisingCount = row.fundraising_accounts?.[0]?.count ?? 0;
+  const interactionCount = row.interaction_organizations?.[0]?.count ?? 0;
+  const taskCount = row.tasks?.[0]?.count ?? 0;
+  const noteCount = row.note_links?.[0]?.count ?? 0;
+  const portfolioCount = row.portfolio_companies?.[0]?.count ?? 0;
+  const lastInteractionAt = row.latest_interactions?.[0]?.occurred_at ?? null;
 
   return {
     id: row.id,
@@ -93,12 +140,21 @@ function normalizeOrganizationRow(row: OrganizationQueryRow): OrganizationRow {
     headquarters: row.headquarters,
     website: row.website,
     linkedin_url: row.linkedin_url,
+    preferred_channel: row.preferred_channel,
     tags: row.tags,
-    notes: row.notes,
+    sector_focus: row.sector_focus,
+    description: row.description,
+    internal_notes: row.internal_notes,
+    relationship_status: row.relationship_status,
     created_at: row.created_at,
     updated_at: row.updated_at,
     contact_count: contactCount,
     fundraising_count: fundraisingCount,
+    interaction_count: interactionCount,
+    task_count: taskCount,
+    note_count: noteCount,
+    portfolio_count: portfolioCount,
+    last_interaction_at: lastInteractionAt,
     quality: quality.quality,
     review_flags: quality.flags
   };
@@ -113,9 +169,12 @@ export function matchesOrganizationQuery(row: OrganizationRow, query: string): b
     row.organization_type,
     row.headquarters,
     row.tags?.join(' '),
-    row.notes,
+    row.description,
+    row.internal_notes,
     row.website,
-    row.linkedin_url
+    row.linkedin_url,
+    row.preferred_channel,
+    row.relationship_status
   ]
     .filter(Boolean)
     .join(' ')
@@ -135,12 +194,23 @@ export async function getOrganizationsPageData(supabase: SupabaseClient): Promis
         headquarters,
         website,
         linkedin_url,
+        preferred_channel,
         tags,
-        notes,
+        description,
+        internal_notes:notes,
+        relationship_status,
+        sector_focus,
         created_at,
         updated_at,
         contacts:contacts!contacts_primary_organization_id_fkey (count),
-        fundraising_accounts:fundraising_accounts!fundraising_accounts_organization_id_fkey (count)
+        fundraising_accounts:fundraising_accounts!fundraising_accounts_organization_id_fkey (count),
+        interaction_organizations:interaction_organizations!interaction_organizations_organization_id_fkey (count),
+        tasks:tasks!tasks_organization_id_fkey (count),
+        note_links:notes!notes_organization_id_fkey (count),
+        portfolio_companies:portfolio_companies!portfolio_companies_organization_id_fkey (count),
+        latest_interactions:interaction_organizations!interaction_organizations_organization_id_fkey (
+          interaction:interactions!interaction_organizations_interaction_id_fkey (occurred_at)
+        )
       `,
       { count: 'exact' }
     )
@@ -160,7 +230,32 @@ export async function getOrganizationsPageData(supabase: SupabaseClient): Promis
     };
   }
 
-  const allRows = (data ?? []).map((row) => normalizeOrganizationRow(row as unknown as OrganizationQueryRow));
+  const normalizedRows = (data ?? []).map((row) => {
+    const normalized = row as unknown as OrganizationQueryRow & {
+      latest_interactions?: Array<{ interaction?: { occurred_at: string | null } | Array<{ occurred_at: string | null }> | null }> | null;
+    };
+
+    const latestInteractions = (normalized.latest_interactions ?? [])
+      .map((link) => {
+        const nestedLink = link as { interaction?: { occurred_at: string | null } | Array<{ occurred_at: string | null }> | null };
+        const interaction = Array.isArray(nestedLink.interaction) ? nestedLink.interaction[0] : nestedLink.interaction;
+        return interaction?.occurred_at ?? null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(String(b)).getTime() - new Date(String(a)).getTime());
+
+    return normalizeOrganizationRow({
+      ...normalized,
+      latest_interactions: latestInteractions.length ? [{ occurred_at: latestInteractions[0] }] : []
+    });
+  });
+
+  const allRows = normalizedRows.sort((a, b) => {
+    const scoreA = a.contact_count + a.fundraising_count + a.interaction_count + a.task_count + a.note_count + a.portfolio_count;
+    const scoreB = b.contact_count + b.fundraising_count + b.interaction_count + b.task_count + b.note_count + b.portfolio_count;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return a.name.localeCompare(b.name);
+  });
   const rows = allRows.filter((row) => row.quality === 'verified');
   const reviewRows = allRows.filter((row) => row.quality === 'review');
 
@@ -181,11 +276,14 @@ export async function getOrganizationDetailData(supabase: SupabaseClient, organi
     { data: orgData, error: orgError },
     { data: contactsData },
     { data: fundraisingData },
-    { data: interactionsData }
+    { data: interactionsData },
+    { data: tasksData },
+    { data: notesData },
+    { data: portfolioData }
   ] = await Promise.all([
     supabase
       .from('organizations')
-      .select('id, name, organization_type, headquarters, website, linkedin_url, tags, notes, created_at, updated_at')
+      .select('id, name, organization_type, headquarters, website, linkedin_url, preferred_channel, tags, sector_focus, description, internal_notes:notes, relationship_status, created_at, updated_at')
       .eq('id', organizationId)
       .maybeSingle(),
     supabase
@@ -207,10 +305,30 @@ export async function getOrganizationDetailData(supabase: SupabaseClient, organi
           interaction_type,
           subject,
           summary,
-          occurred_at
+          occurred_at,
+          source_system
         )
       `)
       .eq('organization_id', organizationId)
+      .limit(20),
+    supabase
+      .from('tasks')
+      .select('id, title, status, priority, due_at')
+      .eq('organization_id', organizationId)
+      .order('due_at', { ascending: true, nullsFirst: false })
+      .limit(20),
+    supabase
+      .from('notes')
+      .select('id, title, note_type, pinned, created_at, body')
+      .eq('organization_id', organizationId)
+      .order('pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('portfolio_companies')
+      .select('id, company_name, stage, status, investment_amount, current_valuation')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false })
       .limit(20)
   ]);
 
@@ -219,14 +337,14 @@ export async function getOrganizationDetailData(supabase: SupabaseClient, organi
   }
 
   const quality = assessRecordQuality(
-    [orgData.name, orgData.organization_type, orgData.headquarters, orgData.notes],
+    [orgData.name, orgData.organization_type, orgData.headquarters, orgData.description],
     { requireIdentity: true }
   );
 
   const interactions = (interactionsData ?? [])
     .map((link: { interaction: unknown }) => {
       const interaction = Array.isArray(link.interaction) ? link.interaction[0] : link.interaction;
-      return interaction as { id: string; interaction_type: string | null; subject: string | null; summary: string | null; occurred_at: string | null } | null;
+      return interaction as { id: string; interaction_type: string | null; subject: string | null; summary: string | null; occurred_at: string | null; source_system: string | null } | null;
     })
     .filter(Boolean) as OrganizationDetailRow['interactions'];
 
@@ -242,11 +360,19 @@ export async function getOrganizationDetailData(supabase: SupabaseClient, organi
       ...orgData,
       contact_count: contactsData?.length ?? 0,
       fundraising_count: fundraisingData?.length ?? 0,
+      interaction_count: interactions.length,
+      task_count: tasksData?.length ?? 0,
+      note_count: notesData?.length ?? 0,
+      portfolio_count: portfolioData?.length ?? 0,
+      last_interaction_at: interactions[0]?.occurred_at ?? null,
       quality: quality.quality,
       review_flags: quality.flags,
       contacts: (contactsData ?? []) as OrganizationDetailRow['contacts'],
       fundraising_accounts: (fundraisingData ?? []) as OrganizationDetailRow['fundraising_accounts'],
-      interactions
+      interactions,
+      tasks: (tasksData ?? []) as OrganizationDetailRow['tasks'],
+      notes: (notesData ?? []) as OrganizationDetailRow['notes'],
+      portfolio_companies: (portfolioData ?? []) as OrganizationDetailRow['portfolio_companies']
     }
   };
 }

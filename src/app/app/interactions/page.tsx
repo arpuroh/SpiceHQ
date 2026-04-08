@@ -3,12 +3,45 @@ import { createClient } from '@/lib/supabase/server';
 import {
   formatDateTime,
   formatInteractionSummary,
+  getInteractionContactName,
   getInteractionsPageData
 } from '@/lib/data/interactions';
 
-export default async function InteractionsPage() {
+type InteractionsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+}
+
+export default async function InteractionsPage({ searchParams }: InteractionsPageProps) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const query = getParam(resolvedSearchParams.q).trim().toLowerCase();
+  const organizationFilter = getParam(resolvedSearchParams.organization).trim();
   const supabase = await createClient();
   const data = await getInteractionsPageData(supabase);
+  const filteredRows = data.rows.filter((row) => {
+    if (organizationFilter && !row.organizations.some((organizationLink) => organizationLink.organization?.id === organizationFilter)) return false;
+    if (!query) return true;
+
+    const haystack = [
+      row.interaction_type,
+      row.source_system,
+      row.subject,
+      row.summary,
+      row.body_preview,
+      ...row.contacts.map((contactLink) => getInteractionContactName(contactLink.contact)),
+      ...row.organizations.map((organizationLink) => organizationLink.organization?.name ?? null),
+      ...row.fundraising_accounts.map((accountLink) => accountLink.fundraising_account?.stage ?? null)
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
 
   return (
     <div className="container">
@@ -41,6 +74,16 @@ export default async function InteractionsPage() {
           </div>
           <div className="badge">{data.totalInteractions} imported total</div>
         </div>
+        <form method="get" action="/app/interactions" className="filterBar" style={{ marginBottom: 16 }}>
+          <input type="text" name="q" placeholder="Search interaction, org, contact, or source…" defaultValue={query} className="filterInput" />
+          <select name="organization" defaultValue={organizationFilter} className="filterSelect">
+            <option value="">All organizations</option>
+            {data.organizationOptions.map((org) => (
+              <option key={org.id} value={org.id}>{org.name}</option>
+            ))}
+          </select>
+          <button type="submit" className="secondaryButton">Filter</button>
+        </form>
         <div className="tableWrap">
           <table className="table">
             <thead>
@@ -54,15 +97,13 @@ export default async function InteractionsPage() {
               </tr>
             </thead>
             <tbody>
-              {data.rows.length ? data.rows.map((row) => {
-                const contactNames = row.contacts
-                  .map((contactLink) => contactLink.contact?.full_name ?? [contactLink.contact?.first_name, contactLink.contact?.last_name].filter(Boolean).join(' '))
-                  .filter(Boolean)
-                  .join(' · ');
-                const organizationNames = row.organizations
-                  .map((organizationLink) => organizationLink.organization?.name)
-                  .filter(Boolean)
-                  .join(' · ');
+              {filteredRows.length ? filteredRows.map((row) => {
+                const contactEntries = row.contacts
+                  .map((contactLink) => contactLink.contact)
+                  .filter(Boolean);
+                const organizationEntries = row.organizations
+                  .map((organizationLink) => organizationLink.organization)
+                  .filter(Boolean);
                 const accountStages = row.fundraising_accounts
                   .map((accountLink) => accountLink.fundraising_account?.stage)
                   .filter(Boolean)
@@ -79,14 +120,28 @@ export default async function InteractionsPage() {
                       <strong>{row.subject ?? 'Untitled interaction'}</strong>
                       <div className="tableSubtle">{formatInteractionSummary(row)}</div>
                     </td>
-                    <td>{contactNames || '—'}</td>
-                    <td>{organizationNames || '—'}</td>
+                    <td>
+                      {contactEntries.length ? contactEntries.map((contact, index) => (
+                        <span key={contact!.id}>
+                          {index > 0 ? ' · ' : ''}
+                          <Link href={`/app/contacts/${contact!.id}`} className="inlineLink">{getInteractionContactName(contact!)}</Link>
+                        </span>
+                      )) : '—'}
+                    </td>
+                    <td>
+                      {organizationEntries.length ? organizationEntries.map((organization, index) => (
+                        <span key={organization!.id}>
+                          {index > 0 ? ' · ' : ''}
+                          <Link href={`/app/organizations/${organization!.id}`} className="inlineLink">{organization!.name}</Link>
+                        </span>
+                      )) : '—'}
+                    </td>
                     <td>{accountStages || '—'}</td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan={6} className="subtle">No interaction rows available yet.</td>
+                  <td colSpan={6} className="subtle">{query || organizationFilter ? 'No interactions match the current filters.' : 'No interaction rows available yet.'}</td>
                 </tr>
               )}
             </tbody>

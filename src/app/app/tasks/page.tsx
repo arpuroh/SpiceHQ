@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { addTaskAction, updateTaskAction } from '@/app/app/actions';
 import { PageHeader, MetricCard } from '@/components/crm-ui';
 import { createClient } from '@/lib/supabase/server';
-import { formatDateTime, getTasksPageData, isOverdue, matchesTaskQuery } from '@/lib/data/tasks';
+import { formatDateTime, getTaskContactName, getTasksPageData, isOverdue, matchesTaskQuery } from '@/lib/data/tasks';
 import { formatReviewFlags } from '@/lib/data/record-quality';
 
 type TasksPageProps = {
@@ -23,6 +23,8 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
   const query = getParam(resolvedSearchParams.q).trim();
   const statusFilter = getParam(resolvedSearchParams.status).trim();
   const priorityFilter = getParam(resolvedSearchParams.priority).trim();
+  const organizationFilter = getParam(resolvedSearchParams.organization).trim();
+  const contactFilter = getParam(resolvedSearchParams.contact).trim();
 
   const supabase = await createClient();
   const data = await getTasksPageData(supabase);
@@ -31,6 +33,8 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
   const filteredRows = allRows.filter((row) => {
     if (statusFilter && (row.status ?? '') !== statusFilter) return false;
     if (priorityFilter && (row.priority ?? '') !== priorityFilter) return false;
+    if (organizationFilter && (row.organization?.id ?? '') !== organizationFilter) return false;
+    if (contactFilter && (row.contact?.id ?? '') !== contactFilter) return false;
     if (query && !matchesTaskQuery(row, query)) return false;
     return true;
   });
@@ -86,7 +90,21 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
           </div>
 
           <form method="get" action="/app/tasks" className="filterBar">
-            <input type="text" name="q" placeholder="Search tasks…" defaultValue={query} className="filterInput" />
+            <input type="text" name="q" placeholder="Search task, org, or contact…" defaultValue={query} className="filterInput" />
+            <select name="organization" defaultValue={organizationFilter} className="filterSelect">
+              <option value="">All organizations</option>
+              {data.organizationOptions.map((org) => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
+            <select name="contact" defaultValue={contactFilter} className="filterSelect">
+              <option value="">All contacts</option>
+              {data.contactOptions.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contact.full_name ?? `${contact.first_name} ${contact.last_name ?? ''}`.trim()}
+                </option>
+              ))}
+            </select>
             <select name="status" defaultValue={statusFilter} className="filterSelect">
               <option value="">All statuses</option>
               {statusOptions.map((s) => (
@@ -101,6 +119,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
             </select>
             {reviewMode && <input type="hidden" name="view" value="review" />}
             <button type="submit" className="secondaryButton">Filter</button>
+            <Link href={reviewMode ? '/app/tasks?view=review' : '/app/tasks'} className="secondaryButton">Reset</Link>
           </form>
 
           <div className="activityList">
@@ -133,14 +152,35 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                     </div>
                   </div>
                   {row.description && <div className="tableSubtle">{row.description.slice(0, 150)}</div>}
-                  <div className="tableSubtle">
-                    {[
-                      row.organization ? row.organization.name : null,
-                      row.contact ? (row.contact.full_name ?? `${row.contact.first_name} ${row.contact.last_name ?? ''}`.trim()) : null,
-                      row.due_at ? `Due ${formatDateTime(row.due_at)}` : null
-                    ].filter(Boolean).join(' · ') || 'No linked context'}
+                  <div className="tableSubtle contextLinksRow">
+                    {row.organization ? (
+                      <Link href={`/app/organizations/${row.organization.id}`} className="inlineLink">
+                        {row.organization.name}
+                      </Link>
+                    ) : null}
+                    {row.contact ? (
+                      <>
+                        {row.organization ? <span>·</span> : null}
+                        <Link href={`/app/contacts/${row.contact.id}`} className="inlineLink">
+                          {getTaskContactName(row.contact)}
+                        </Link>
+                      </>
+                    ) : null}
+                    {row.organization ? (
+                      <>
+                        <span>·</span>
+                        <Link href={`/app/fundraising?organization=${row.organization.id}`} className="inlineLink">Pipeline</Link>
+                      </>
+                    ) : null}
+                    {row.due_at ? (
+                      <>
+                        {(row.organization || row.contact) ? <span>·</span> : null}
+                        <span>Due {formatDateTime(row.due_at)}</span>
+                      </>
+                    ) : null}
+                    {!row.organization && !row.contact && !row.due_at ? <span>No linked context</span> : null}
                     {row.quality === 'review' && (
-                      <span style={{ color: 'var(--review)', marginLeft: '0.5rem' }}>
+                      <span style={{ color: 'var(--review)' }}>
                         ({formatReviewFlags(row.review_flags).join(', ')})
                       </span>
                     )}
@@ -162,7 +202,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                   {query || statusFilter || priorityFilter ? 'No matches' : 'No tasks yet'}
                 </div>
                 <div className="emptyStateBody">
-                  {query || statusFilter || priorityFilter
+                  {query || statusFilter || priorityFilter || organizationFilter
                     ? 'Try broadening your search or clearing filters.'
                     : 'Add your first task using the form.'}
                 </div>

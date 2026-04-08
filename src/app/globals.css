@@ -12,6 +12,7 @@
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; }
+input::placeholder, textarea::placeholder { color: #6b7a94; }
 
 body {
   min-height: 100vh;
@@ -109,8 +110,9 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.grid-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.gridDetail {
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.85fr);
+  align-items: start;
 }
 
 .kpiTitle {
@@ -126,23 +128,9 @@ body {
   font-weight: 700;
 }
 
-.metricNote {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .sectionTitle {
   margin: 0 0 12px;
   font-size: 18px;
-}
-
-.panelHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 14px;
 }
 
 .stageList, .activityList {
@@ -177,6 +165,7 @@ body {
   border-radius: 10px;
   border: 1px solid var(--line);
   cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease, border-color 140ms ease, background 140ms ease;
 }
 
 .primaryButton {
@@ -191,11 +180,14 @@ body {
   color: var(--text);
 }
 
-.buttonRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+.primaryButton:hover, .secondaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.primaryButton:disabled, .secondaryButton:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
 }
 
 .hero {
@@ -242,6 +234,22 @@ body {
   font-size: 12px;
 }
 
+.contextLinksRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.inlineLink {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
 .errorBanner {
   margin-top: 16px;
   padding: 12px 14px;
@@ -258,15 +266,6 @@ body {
   border: 1px solid rgba(52, 211, 153, 0.4);
   background: rgba(5, 150, 105, 0.18);
   color: #bbf7d0;
-}
-
-.warningBanner {
-  margin-top: 16px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  background: rgba(217, 119, 6, 0.16);
-  color: #fde68a;
 }
 
 .stack {
@@ -290,70 +289,6 @@ body {
   gap: 8px;
   color: var(--muted);
   font-size: 14px;
-}
-
-.pillRow {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-
-.reasonPill {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #fde68a;
-  font-size: 12px;
-}
-
-.reasonList {
-  margin-top: 8px;
-}
-
-input, select, textarea {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: rgba(7, 12, 21, 0.9);
-  color: var(--text);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-textarea {
-  resize: vertical;
-}
-
-@media (max-width: 1080px) {
-  .grid-4, .grid-3, .grid-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .appShell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .topbar, .panelHeader {
-    flex-direction: column;
-  }
-
-  .grid-4, .grid-3, .grid-2, .formGrid2 {
-    grid-template-columns: 1fr;
-  }
-
-  .container {
-    padding: 18px;
-  }
 }
 
 .field input,
@@ -380,6 +315,19 @@ textarea {
   border-color: rgba(125, 211, 252, 0.45);
 }
 
+.fieldError {
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(127, 29, 29, 0.14);
+}
+
 .panelHeader {
   display: flex;
   justify-content: space-between;
@@ -394,6 +342,58 @@ textarea {
   flex-wrap: wrap;
 }
 
+.detailList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.splitRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detailRow span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.detailRow strong {
+  text-align: right;
+}
+
+.chipStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.relationChip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.02);
+}
+
+.relationChip span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 @media (max-width: 900px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -404,6 +404,9 @@ textarea {
     border-bottom: 1px solid var(--line);
   }
   .grid-4, .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .gridDetail {
     grid-template-columns: 1fr;
   }
   .formGrid2 {

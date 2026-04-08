@@ -1,42 +1,109 @@
 import Link from 'next/link';
+import { EmptyState, FilterSummary, MetricCard, PageHeader } from '@/components/crm-ui';
 import { createClient } from '@/lib/supabase/server';
-import { formatUsd, getFundraisingPageData } from '@/lib/data/fundraising';
+import { formatUsd, getFundraisingPageData, matchesFundraisingQuery } from '@/lib/data/fundraising';
 
-export default async function FundraisingPage() {
+type FundraisingPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+}
+
+export default async function FundraisingPage({ searchParams }: FundraisingPageProps) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const query = getParam(resolvedSearchParams.q).trim();
+  const organizationFilter = getParam(resolvedSearchParams.organization).trim();
   const supabase = await createClient();
   const data = await getFundraisingPageData(supabase);
+  const filteredRows = data.rows.filter((row) => {
+    if (organizationFilter && (row.organization?.id ?? '') !== organizationFilter) return false;
+    if (query && !matchesFundraisingQuery(row, query)) return false;
+    return true;
+  });
+  const organizationOptions = Array.from(
+    new Map(data.rows.filter((row) => row.organization).map((row) => [row.organization!.id, row.organization!])).values()
+  );
+  const activeFilterCount = [query, organizationFilter].filter(Boolean).length;
 
   return (
-    <div className="container">
-      <div className="topbar">
-        <div>
-          <div className="badge">Fundraising</div>
-          <h1 style={{ margin: '12px 0 8px', fontSize: 36 }}>Investor / fundraising table</h1>
-          <div className="subtle">
-            Default view now suppresses placeholder accounts and lifts rows with real organization, relationship, and capital signal.
-          </div>
-        </div>
-        <div className="buttonRow">
-          <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
-          <Link href="/app/review" className="secondaryButton">Review hidden rows</Link>
-        </div>
+    <div className="pageStack">
+      <PageHeader
+        eyebrow="Fundraising"
+        title="Investor pipeline and capital tracking"
+        description={
+          <>
+            Curated accounts emphasize real organizations, live relationship context, and actual capital signal.
+            Placeholder source rows stay out of the working view.
+          </>
+        }
+        meta={
+          <>
+            <div className="sourceBadge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
+            <div className="badge">{data.totalAccounts} imported rows</div>
+          </>
+        }
+        actions={[
+          { href: '/app/organizations', label: 'Open organizations', variant: 'secondary' },
+          { href: '/app/review', label: `Review hidden rows (${data.hiddenAccounts})`, variant: 'secondary' }
+        ]}
+      />
+
+      <div className="grid grid-4">
+        <MetricCard label="Source accounts" value={data.totalAccounts} note={`${data.visibleAccounts} visible · ${data.hiddenAccounts} in review`} tone="accent" />
+        <MetricCard label="Target" value={formatUsd(data.totalTarget)} note="Combined target commitments" />
+        <MetricCard label="Soft circled" value={formatUsd(data.totalSoftCircled)} note="Current soft commitments" tone="success" />
+        <MetricCard label="Committed" value={formatUsd(data.totalCommitted)} note="Hard committed capital" />
       </div>
 
-      <div className="grid grid-4" style={{ marginBottom: 24 }}>
-        <section className="panel"><div className="kpiTitle">Visible accounts</div><div className="kpiValue">{data.visibleAccounts}</div><div className="metricNote">{data.hiddenAccounts} hidden</div></section>
-        <section className="panel"><div className="kpiTitle">Target</div><div className="kpiValue">{formatUsd(data.totalTarget)}</div></section>
-        <section className="panel"><div className="kpiTitle">Soft circled</div><div className="kpiValue">{formatUsd(data.totalSoftCircled)}</div></section>
-        <section className="panel"><div className="kpiTitle">Committed</div><div className="kpiValue">{formatUsd(data.totalCommitted)}</div></section>
-      </div>
+      {data.hiddenAccounts > 0 ? (
+        <div className="successBanner">
+          {data.hiddenAccounts} fundraising rows are currently suppressed from the working view. They still exist in the source layer and can be inspected in <Link href="/app/review" className="inlineLink">review</Link>.
+        </div>
+      ) : null}
 
       <section className="panel">
         <div className="panelHeader">
-          <div>
-            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Curated accounts</h2>
+          <div className="panelTitleGroup">
+            <h2 className="sectionTitle">Curated accounts</h2>
             <div className="subtle">Sorted toward accounts with real organizations, financial signal, and relationship context.</div>
           </div>
-          <div className="badge">{data.totalAccounts} imported total</div>
+          <div className="statusBadge statusBadge-green">{filteredRows.length} visible rows</div>
         </div>
+
+        <div className="toolbar">
+          <form method="get" action="/app/fundraising" className="toolbarForm">
+            <label className="fieldGroup fieldGroup-search">
+              <span className="fieldLabel">Search</span>
+              <input type="search" name="q" placeholder="Investor, org, stage, notes…" defaultValue={query} />
+            </label>
+
+            <label className="fieldGroup">
+              <span className="fieldLabel">Organization</span>
+              <select name="organization" defaultValue={organizationFilter}>
+                <option value="">All organizations</option>
+                {organizationOptions.map((organization) => (
+                  <option key={organization.id} value={organization.id}>{organization.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="toolbarActions">
+              <button type="submit" className="primaryButton">Apply filters</button>
+              <Link href="/app/fundraising" className="secondaryButton">Reset</Link>
+            </div>
+          </form>
+
+          <div className="toolbarSummary">
+            <FilterSummary
+              heading={activeFilterCount ? 'Filtered fundraising view' : 'Working fundraising view'}
+              detail={activeFilterCount ? `${filteredRows.length} matches across ${data.rows.length} visible rows.` : `${data.rows.length} curated accounts in the working view.`}
+            />
+          </div>
+        </div>
+
         <div className="tableWrap">
           <table className="table">
             <thead>
@@ -53,10 +120,14 @@ export default async function FundraisingPage() {
               </tr>
             </thead>
             <tbody>
-              {data.rows.length ? data.rows.map((row) => (
+              {filteredRows.length ? filteredRows.map((row) => (
                 <tr key={row.id}>
                   <td>
-                    <strong>{row.organization?.name ?? 'Unknown organization'}</strong>
+                    {row.organization ? (
+                      <Link href={`/app/organizations/${row.organization.id}`} className="tableTitle">{row.organization.name}</Link>
+                    ) : (
+                      <strong>Unknown organization</strong>
+                    )}
                     <div className="tableSubtle">{row.organization?.tags?.slice(0, 3).join(' · ') || 'No tags yet'}</div>
                   </td>
                   <td>{row.stage}</td>
@@ -70,7 +141,13 @@ export default async function FundraisingPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={9} className="subtle">No fundraising rows available yet.</td>
+                  <td colSpan={9}>
+                    <EmptyState
+                      title="No fundraising rows match the current filters"
+                      detail={query || organizationFilter ? 'Try broadening the search or clearing filters.' : 'No fundraising rows available yet.'}
+                      action={<Link href="/app/fundraising" className="secondaryButton">Clear filters</Link>}
+                    />
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -79,10 +156,10 @@ export default async function FundraisingPage() {
       </section>
 
       {data.hiddenRows.length ? (
-        <section className="panel" style={{ marginTop: 24 }}>
+        <section className="panel">
           <div className="panelHeader">
-            <div>
-              <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Suppressed fundraising rows</h2>
+            <div className="panelTitleGroup">
+              <h2 className="sectionTitle">Suppressed fundraising rows</h2>
               <div className="subtle">These rows remain accessible for cleanup and source-data triage.</div>
             </div>
             <div className="badge">{data.hiddenRows.length} suspect rows</div>

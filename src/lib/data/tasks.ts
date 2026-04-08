@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { assessRecordQuality, type ReviewFlag } from '@/lib/data/record-quality';
+import { curateRecords, type CuratedReason, curateInteractionLikeRecord } from '@/lib/data/curation';
+import type { ReviewFlag } from '@/lib/data/record-quality';
 
 export interface TaskRow {
   id: string;
@@ -30,8 +31,17 @@ export interface TaskPageData {
   completedTasks: number;
   rows: TaskRow[];
   reviewRows: TaskRow[];
+  hiddenRows: Array<{
+    row: TaskRow;
+    reasons: CuratedReason[];
+  }>;
   organizationOptions: Array<{ id: string; name: string }>;
   contactOptions: Array<{ id: string; full_name: string | null; first_name: string; last_name: string | null }>;
+}
+
+export function getTaskContactName(contact: TaskRow['contact']): string {
+  if (!contact) return 'Unknown contact';
+  return contact.full_name ?? (`${contact.first_name} ${contact.last_name ?? ''}`.trim() || 'Unknown contact');
 }
 
 function normalizeRelation<T>(val: T | T[] | null): T | null {
@@ -52,7 +62,15 @@ export function isOverdue(task: { status: string | null; due_at: string | null }
 
 export function matchesTaskQuery(row: TaskRow, query: string): boolean {
   const q = query.toLowerCase();
-  return [row.title, row.description, row.status, row.priority]
+  return [
+    row.title,
+    row.description,
+    row.status,
+    row.priority,
+    row.organization?.name,
+    row.contact?.full_name,
+    row.contact ? `${row.contact.first_name} ${row.contact.last_name ?? ''}`.trim() : null
+  ]
     .filter(Boolean)
     .some((field) => field!.toLowerCase().includes(q));
 }
@@ -82,31 +100,49 @@ export async function getTasksPageData(supabase: SupabaseClient): Promise<TaskPa
   const organizationOptions = orgResult.data ?? [];
   const contactOptions = contactResult.data ?? [];
 
-  const rows: TaskRow[] = [];
-  const reviewRows: TaskRow[] = [];
+  const allRows: TaskRow[] = data.map((raw) => ({
+    ...raw,
+    organization: normalizeRelation(raw.organization),
+    contact: normalizeRelation(raw.contact),
+    quality: 'verified',
+    review_flags: []
+  }));
+
+  const curated = curateRecords(allRows, (row) => {
+    const evaluation = curateInteractionLikeRecord({
+      markerValues: [row.title, row.description, row.status, row.priority, row.organization?.name, row.contact?.full_name],
+      hasOccurredAt: Boolean(row.created_at || row.due_at),
+      hasSummary: Boolean(row.title?.trim() || row.description?.trim()),
+      hasLinkedSubjects: Boolean(row.organization || row.contact),
+      hasFundraisingLink: Boolean(row.fundraising_account_id),
+      hasSource: Boolean(row.source_system || row.status || row.priority)
+    });
+
+    const review_flags: ReviewFlag[] = [];
+    if (evaluation.reasons.some((reason) => reason.code === 'synthetic_marker')) review_flags.push('contains_test_marker');
+    if (evaluation.reasons.some((reason) => reason.code === 'missing_identity')) review_flags.push('missing_identity');
+
+    return {
+      row: {
+        ...row,
+        quality: (evaluation.hidden ? 'review' : 'verified') as 'review' | 'verified',
+        review_flags
+      },
+      ...evaluation
+    };
+  });
+
+  const rows = curated.visible.map((item) => item.row);
+  const reviewRows = curated.hidden.map((item) => item.row);
   let openTasks = 0;
   let overdueTasks = 0;
   let completedTasks = 0;
 
-  for (const raw of data) {
-    const quality = assessRecordQuality([raw.title, raw.description], { requireIdentity: true });
-    const row: TaskRow = {
-      ...raw,
-      organization: normalizeRelation(raw.organization),
-      contact: normalizeRelation(raw.contact),
-      quality: quality.quality,
-      review_flags: quality.flags
-    };
-
-    if (quality.quality === 'review') {
-      reviewRows.push(row);
-    } else {
-      rows.push(row);
-      if (row.status === 'completed') completedTasks++;
-      else {
-        openTasks++;
-        if (isOverdue(row)) overdueTasks++;
-      }
+  for (const row of rows) {
+    if (row.status === 'completed') completedTasks++;
+    else {
+      openTasks++;
+      if (isOverdue(row)) overdueTasks++;
     }
   }
 
@@ -120,6 +156,7 @@ export async function getTasksPageData(supabase: SupabaseClient): Promise<TaskPa
     completedTasks,
     rows,
     reviewRows,
+    hiddenRows: curated.hidden.map((item) => ({ row: item.row, reasons: item.reasons })),
     organizationOptions,
     contactOptions
   };

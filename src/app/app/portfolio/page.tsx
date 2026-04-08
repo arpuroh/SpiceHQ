@@ -27,15 +27,18 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
   const query = getParam(resolvedSearchParams.q).trim();
   const stageFilter = getParam(resolvedSearchParams.stage).trim();
   const statusFilter = getParam(resolvedSearchParams.status).trim();
+  const organizationFilter = getParam(resolvedSearchParams.organization).trim();
 
   const supabase = await createClient();
   const data = await getPortfolioPageData(supabase);
 
+  const organizationById = new Map(data.organizationOptions.map((org) => [org.id, org.name]));
   const allRows = reviewMode ? data.reviewRows : data.rows;
   const filteredRows = allRows.filter((row) => {
     if (stageFilter && (row.stage ?? '') !== stageFilter) return false;
     if (statusFilter && (row.status ?? '') !== statusFilter) return false;
-    if (query && !matchesPortfolioQuery(row, query)) return false;
+    if (organizationFilter && (row.organization_id ?? '') !== organizationFilter) return false;
+    if (query && !matchesPortfolioQuery(row, query, row.organization_id ? organizationById.get(row.organization_id) ?? null : null)) return false;
     return true;
   });
 
@@ -85,6 +88,39 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
         <MetricCard label="Board seats" value={data.withBoardSeat} note="Companies with board representation" />
       </div>
 
+      {!reviewMode && !query && !stageFilter && !statusFilter && !organizationFilter ? (
+        <section className="panel">
+          <div className="panelHeader">
+            <div className="panelTitleGroup">
+              <h2 className="sectionTitle">Organization-linked portfolio lanes</h2>
+              <div className="subtle">Use organizations as the operating hub for founder, investor, and portfolio context.</div>
+            </div>
+          </div>
+          <div className="activityList">
+            {data.rows.filter((row) => row.organization_id).slice(0, 8).map((row) => (
+              <div key={row.id} className="activityItem">
+                <div className="splitRow">
+                  <Link href={`/app/portfolio/${row.id}`} className="tableTitle">{row.company_name}</Link>
+                  <span className="badge">{row.stage ?? '—'}</span>
+                </div>
+                <div className="tableSubtle">
+                  {[row.organization_id ? organizationById.get(row.organization_id) ?? null : null, row.sector, row.status].filter(Boolean).join(' · ')}
+                </div>
+                {row.organization_id ? (
+                  <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                    <Link href={`/app/organizations/${row.organization_id}`} className="inlineLink">Open organization</Link>
+                    <span>·</span>
+                    <Link href={`/app/notes?organization=${row.organization_id}`} className="inlineLink">Notes</Link>
+                    <span>·</span>
+                    <Link href={`/app/tasks?organization=${row.organization_id}`} className="inlineLink">Tasks</Link>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid grid-2">
         <section className="panel">
           <div className="panelHeader">
@@ -96,7 +132,13 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
           </div>
 
           <form method="get" action="/app/portfolio" className="filterBar">
-            <input type="text" name="q" placeholder="Search companies…" defaultValue={query} className="filterInput" />
+            <input type="text" name="q" placeholder="Search company, org, sector, or lead…" defaultValue={query} className="filterInput" />
+            <select name="organization" defaultValue={organizationFilter} className="filterSelect">
+              <option value="">All organizations</option>
+              {data.organizationOptions.map((org) => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
             <select name="stage" defaultValue={stageFilter} className="filterSelect">
               <option value="">All stages</option>
               {stageOptions.map((s) => (
@@ -133,8 +175,21 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
                       <td>
                         <Link href={`/app/portfolio/${row.id}`} className="tableTitle">{row.company_name}</Link>
                         <div className="tableSubtle">
-                          {[row.sector, row.headquarters].filter(Boolean).join(' · ') || 'No details'}
+                        {[
+                          row.organization_id ? organizationById.get(row.organization_id) ?? null : null,
+                          row.sector,
+                          row.headquarters
+                        ].filter(Boolean).join(' · ') || 'No details'}
                         </div>
+                        {row.organization_id ? (
+                          <div className="contextLinksRow" style={{ marginTop: 8 }}>
+                            <Link href={`/app/organizations/${row.organization_id}`} className="inlineLink">Organization</Link>
+                            <span>·</span>
+                            <Link href={`/app/fundraising?organization=${row.organization_id}`} className="inlineLink">Pipeline</Link>
+                            <span>·</span>
+                            <Link href={`/app/interactions?organization=${row.organization_id}`} className="inlineLink">Interactions</Link>
+                          </div>
+                        ) : null}
                         {row.quality === 'review' && (
                           <div className="tableSubtle" style={{ color: 'var(--review)' }}>
                             Review: {formatReviewFlags(row.review_flags).join(', ')}
@@ -154,10 +209,10 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
                     <td colSpan={7}>
                       <div className="emptyState">
                         <div className="emptyStateTitle">
-                          {query || stageFilter || statusFilter ? 'No matches for current filters' : 'No portfolio companies yet'}
+                          {query || stageFilter || statusFilter || organizationFilter ? 'No matches for current filters' : 'No portfolio companies yet'}
                         </div>
                         <div className="emptyStateBody">
-                          {query || stageFilter || statusFilter
+                          {query || stageFilter || statusFilter || organizationFilter
                             ? 'Try broadening your search or clearing filters.'
                             : 'Add your first portfolio company below.'}
                         </div>
@@ -210,13 +265,22 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
             </div>
             <div className="formRow">
               <div className="formGroup">
+                <label htmlFor="organization_id" className="formLabel">Linked organization</label>
+                <select id="organization_id" name="organization_id" className="formInput">
+                  <option value="">None</option>
+                  {data.organizationOptions.map((org) => (
+                    <option key={org.id} value={org.id}>{org.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="formGroup">
                 <label htmlFor="headquarters" className="formLabel">Headquarters</label>
                 <input type="text" id="headquarters" name="headquarters" className="formInput" />
               </div>
-              <div className="formGroup">
-                <label htmlFor="website" className="formLabel">Website</label>
-                <input type="url" id="website" name="website" placeholder="https://…" className="formInput" />
-              </div>
+            </div>
+            <div className="formGroup">
+              <label htmlFor="website" className="formLabel">Website</label>
+              <input type="url" id="website" name="website" placeholder="https://…" className="formInput" />
             </div>
             <div className="formGroup">
               <label htmlFor="description" className="formLabel">Description</label>

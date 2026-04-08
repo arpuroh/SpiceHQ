@@ -76,6 +76,28 @@ export function formatUsd(value: number | null): string {
   }).format(value);
 }
 
+export function matchesFundraisingQuery(row: FundraisingRow, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const haystack = [
+    row.organization?.name,
+    row.organization?.organization_type,
+    row.organization?.headquarters,
+    row.organization?.tags?.join(' '),
+    row.stage,
+    row.status,
+    row.relationship_temperature,
+    row.memo,
+    row.probability_pct != null ? String(row.probability_pct) : null
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
 export async function getFundraisingPageData(supabase: SupabaseClient): Promise<FundraisingPageData> {
   const [
     { data: accountsData, error: accountsError, count },

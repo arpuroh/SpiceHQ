@@ -93,3 +93,20 @@ export function formatReviewFlags(flags: ReviewFlag[]) {
     }
   });
 }
+
+export function explainReviewFlag(flag: ReviewFlag) {
+  switch (flag) {
+    case 'contains_fake_marker':
+      return 'This record contains explicit fake-marker text and should be cleaned before it returns to the working CRM.';
+    case 'contains_redacted_marker':
+      return 'This row still includes redacted placeholder text, so it stays out of default operator views.';
+    case 'contains_test_marker':
+      return 'This row looks synthetic, test-derived, or placeholder-heavy and needs verification before use.';
+    case 'missing_identity':
+      return 'Core identity fields are too weak or blank, so the record is not ready for the working directory.';
+    case 'inactive_fundraising':
+      return 'The fundraising row appears inactive or closed and is treated as non-working pipeline until reviewed.';
+    default:
+      return flag;
+  }
+}

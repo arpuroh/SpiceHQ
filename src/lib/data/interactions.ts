@@ -79,6 +79,12 @@ export interface InteractionPageData {
     row: InteractionRow;
     reasons: CuratedReason[];
   }>;
+  organizationOptions: Array<{ id: string; name: string }>;
+}
+
+export function getInteractionContactName(contact: RelatedContact | null): string {
+  if (!contact) return 'Unknown contact';
+  return contact.full_name ?? (`${contact.first_name} ${contact.last_name ?? ''}`.trim() || 'Unknown contact');
 }
 
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
@@ -108,8 +114,9 @@ export function formatInteractionSummary(row: InteractionRow): string {
 }
 
 export async function getInteractionsPageData(supabase: SupabaseClient): Promise<InteractionPageData> {
-  const { data, error, count } = await supabase
-    .from('interactions')
+  const [{ data, error, count }, { data: organizationsData }] = await Promise.all([
+    supabase
+      .from('interactions')
     .select(
       `
         id,
@@ -147,7 +154,12 @@ export async function getInteractionsPageData(supabase: SupabaseClient): Promise
       { count: 'exact' }
     )
     .order('occurred_at', { ascending: false, nullsFirst: false })
-    .limit(200);
+    .limit(200),
+    supabase
+      .from('organizations')
+      .select('id, name')
+      .order('name')
+  ]);
 
   if (error) {
     return {
@@ -159,7 +171,8 @@ export async function getInteractionsPageData(supabase: SupabaseClient): Promise
       withContacts: 0,
       withOrganizations: 0,
       rows: [],
-      hiddenRows: []
+      hiddenRows: [],
+      organizationOptions: organizationsData ?? []
     };
   }
 
@@ -209,7 +222,8 @@ export async function getInteractionsPageData(supabase: SupabaseClient): Promise
     hiddenRows: curated.hidden.map((item) => ({
       row: item.row,
       reasons: item.reasons
-    }))
+    })),
+    organizationOptions: organizationsData ?? []
   };
 }
 

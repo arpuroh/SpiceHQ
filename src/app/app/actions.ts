@@ -25,9 +25,11 @@ export async function addOrganizationAction(formData: FormData) {
   const name = getString(formData, 'name');
   const organizationType = getString(formData, 'organization_type') ?? 'Firm';
   const headquarters = getString(formData, 'headquarters');
+  const description = getString(formData, 'description') ?? getString(formData, 'notes');
   const notes = getString(formData, 'notes');
-
   const website = getString(formData, 'website');
+  const linkedinUrl = getString(formData, 'linkedin_url');
+  const preferredChannel = getString(formData, 'preferred_channel');
 
   if (!name) {
     redirect('/app/organizations?error=' + buildQueryParam('Organization name is required.'));
@@ -39,6 +41,9 @@ export async function addOrganizationAction(formData: FormData) {
     organization_type: organizationType,
     headquarters,
     website,
+    linkedin_url: linkedinUrl,
+    preferred_channel: preferredChannel,
+    description,
     notes
   });
 
@@ -64,7 +69,9 @@ export async function addContactAction(formData: FormData) {
   const organizationId = getString(formData, 'organization_id');
   const jobTitle = getString(formData, 'job_title');
   const email = getString(formData, 'email');
+  const phone = getString(formData, 'phone');
   const linkedinUrl = getString(formData, 'linkedin_url');
+  const preferredChannel = getString(formData, 'preferred_channel');
   const notes = getString(formData, 'notes');
   const contactId = randomUUID();
 
@@ -81,9 +88,9 @@ export async function addContactAction(formData: FormData) {
     full_name: fullName,
     job_title: jobTitle,
     email,
-    phone: null,
+    phone,
     linkedin_url: linkedinUrl,
-    preferred_channel: null,
+    preferred_channel: preferredChannel,
     status: 'active',
     notes
   });
@@ -129,7 +136,9 @@ export async function updateContactAction(formData: FormData) {
   const organizationId = getString(formData, 'organization_id');
   const jobTitle = getString(formData, 'job_title');
   const email = getString(formData, 'email');
+  const phone = getString(formData, 'phone');
   const linkedinUrl = getString(formData, 'linkedin_url');
+  const preferredChannel = getString(formData, 'preferred_channel');
   const notes = getString(formData, 'notes');
   const status = getString(formData, 'status');
 
@@ -150,7 +159,9 @@ export async function updateContactAction(formData: FormData) {
       full_name: fullName,
       job_title: jobTitle,
       email,
+      phone,
       linkedin_url: linkedinUrl,
+      preferred_channel: preferredChannel,
       status,
       notes
     })
@@ -206,6 +217,8 @@ export async function updateOrganizationAction(formData: FormData) {
   const headquarters = getString(formData, 'headquarters');
   const website = getString(formData, 'website');
   const linkedinUrl = getString(formData, 'linkedin_url');
+  const preferredChannel = getString(formData, 'preferred_channel');
+  const description = getString(formData, 'description') ?? getString(formData, 'notes');
   const notes = getString(formData, 'notes');
 
   if (!organizationId) {
@@ -224,6 +237,8 @@ export async function updateOrganizationAction(formData: FormData) {
       headquarters,
       website,
       linkedin_url: linkedinUrl,
+      preferred_channel: preferredChannel,
+      description,
       notes,
       updated_at: new Date().toISOString()
     })
@@ -330,6 +345,7 @@ export async function addPortfolioCompanyAction(formData: FormData) {
   const description = getString(formData, 'description');
   const leadPartner = getString(formData, 'lead_partner');
   const investmentDate = getString(formData, 'investment_date');
+  const organizationId = getString(formData, 'organization_id');
   const notes = getString(formData, 'notes');
 
   if (!companyName) {
@@ -349,6 +365,7 @@ export async function addPortfolioCompanyAction(formData: FormData) {
     description,
     lead_partner: leadPartner,
     investment_date: investmentDate || null,
+    organization_id: organizationId || null,
     notes
   });
 

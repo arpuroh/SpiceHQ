@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { curateOrganizationLikeRecord, curateRecords, type CuratedReason } from '@/lib/data/curation';
 import { assessRecordQuality, type ReviewFlag } from '@/lib/data/record-quality';
 
 export interface PortfolioFounder {
@@ -55,6 +56,11 @@ export interface PortfolioPageData {
   withBoardSeat: number;
   rows: PortfolioCompanyRow[];
   reviewRows: PortfolioCompanyRow[];
+  hiddenRows: Array<{
+    row: PortfolioCompanyRow;
+    reasons: CuratedReason[];
+  }>;
+  organizationOptions: Array<{ id: string; name: string }>;
 }
 
 function assessPortfolioQuality(row: { company_name: string; sector: string | null; description: string | null; notes: string | null }) {
@@ -76,18 +82,24 @@ export function formatDate(date: string | null | undefined): string {
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function matchesPortfolioQuery(row: PortfolioCompanyRow, query: string): boolean {
+export function matchesPortfolioQuery(row: PortfolioCompanyRow, query: string, organizationName?: string | null): boolean {
   const q = query.toLowerCase();
-  return [row.company_name, row.sector, row.stage, row.headquarters, row.lead_partner, row.notes]
+  return [row.company_name, row.sector, row.stage, row.headquarters, row.lead_partner, row.notes, row.website, organizationName]
     .filter(Boolean)
     .some((field) => field!.toLowerCase().includes(q));
 }
 
 export async function getPortfolioPageData(supabase: SupabaseClient): Promise<PortfolioPageData> {
-  const { data, error } = await supabase
-    .from('portfolio_companies')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const [{ data, error }, { data: organizationsData }] = await Promise.all([
+    supabase
+      .from('portfolio_companies')
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('organizations')
+      .select('id, name')
+      .order('name')
+  ]);
 
   if (error || !data) {
     return {
@@ -100,32 +112,57 @@ export async function getPortfolioPageData(supabase: SupabaseClient): Promise<Po
       totalCurrentValue: 0,
       withBoardSeat: 0,
       rows: [],
-      reviewRows: []
+      reviewRows: [],
+      hiddenRows: [],
+      organizationOptions: organizationsData ?? []
     };
   }
 
-  const rows: PortfolioCompanyRow[] = [];
-  const reviewRows: PortfolioCompanyRow[] = [];
+  const seededRows: PortfolioCompanyRow[] = data.map((row) => ({
+    ...row,
+    quality: 'verified',
+    review_flags: []
+  }));
+
+  const curated = curateRecords(seededRows, (row) => {
+    const evaluation = curateOrganizationLikeRecord({
+      name: row.company_name,
+      markerValues: [row.sector, row.stage, row.status, row.description, row.notes, row.website, row.headquarters, row.lead_partner],
+      hasFinancialSignal: Boolean(row.investment_amount || row.current_valuation || row.valuation_at_entry),
+      hasEngagementSignal: Boolean(row.last_update_at || row.board_seat || row.lead_partner),
+      hasMemo: Boolean(row.description?.trim() || row.notes?.trim()),
+      hasContext: Boolean(row.sector || row.stage || row.headquarters || row.organization_id)
+    });
+
+    const baselineQuality = assessPortfolioQuality(row);
+    const review_flags: ReviewFlag[] = [...baselineQuality.flags];
+    if (evaluation.reasons.some((reason) => reason.code === 'synthetic_marker') && !review_flags.includes('contains_test_marker')) review_flags.push('contains_test_marker');
+    if (evaluation.reasons.some((reason) => reason.code === 'missing_identity') && !review_flags.includes('missing_identity')) review_flags.push('missing_identity');
+
+    return {
+      row: {
+        ...row,
+        quality: (evaluation.hidden ? 'review' : 'verified') as 'review' | 'verified',
+        review_flags
+      },
+      ...evaluation
+    };
+  });
+
+  const rows = curated.visible.map((item) => item.row);
+  const reviewRows = curated.hidden.map((item) => item.row);
   let totalInvested = 0;
   let totalCurrentValue = 0;
   let activeCompanies = 0;
   let withBoardSeat = 0;
 
-  for (const row of data) {
-    const quality = assessPortfolioQuality(row);
-    const enriched: PortfolioCompanyRow = { ...row, quality: quality.quality, review_flags: quality.flags };
-
-    if (quality.quality === 'review') {
-      reviewRows.push(enriched);
-    } else {
-      rows.push(enriched);
-      if (row.status === 'active') {
-        activeCompanies++;
-        totalInvested += row.investment_amount ?? 0;
-        totalCurrentValue += row.current_valuation ?? 0;
-      }
-      if (row.board_seat) withBoardSeat++;
+  for (const row of rows) {
+    if (row.status === 'active') {
+      activeCompanies++;
+      totalInvested += row.investment_amount ?? 0;
+      totalCurrentValue += row.current_valuation ?? 0;
     }
+    if (row.board_seat) withBoardSeat++;
   }
 
   return {
@@ -138,7 +175,9 @@ export async function getPortfolioPageData(supabase: SupabaseClient): Promise<Po
     totalCurrentValue,
     withBoardSeat,
     rows,
-    reviewRows
+    reviewRows,
+    hiddenRows: curated.hidden.map((item) => ({ row: item.row, reasons: item.reasons })),
+    organizationOptions: organizationsData ?? []
   };
 }
 

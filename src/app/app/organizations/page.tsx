@@ -111,8 +111,8 @@ export default async function OrganizationsPage({ searchParams }: OrganizationsP
           </div>
 
           <label className="field">
-            <span>Notes</span>
-            <textarea name="notes" rows={3} placeholder="Firm thesis, sourcing info, relationship context..." />
+            <span>Description</span>
+            <textarea name="description" rows={3} placeholder="Firm thesis, sourcing info, relationship context..." />
           </label>
 
           <div>
@@ -187,9 +187,10 @@ export default async function OrganizationsPage({ searchParams }: OrganizationsP
                 <th>Organization</th>
                 <th>Type</th>
                 <th>Headquarters</th>
+                <th>Coverage</th>
                 <th>Contacts</th>
                 <th>Pipeline</th>
-                <th>{reviewMode ? 'Flags' : 'Notes'}</th>
+                <th>{reviewMode ? 'Flags' : 'Description'}</th>
               </tr>
             </thead>
             <tbody>
@@ -207,6 +208,19 @@ export default async function OrganizationsPage({ searchParams }: OrganizationsP
                     <td>{row.organization_type ?? '—'}</td>
                     <td>{row.headquarters ?? '—'}</td>
                     <td>
+                      <div className="tableSubtle" style={{ marginTop: 0 }}>
+                        {[
+                          row.interaction_count ? `${row.interaction_count} interaction${row.interaction_count === 1 ? '' : 's'}` : null,
+                          row.task_count ? `${row.task_count} task${row.task_count === 1 ? '' : 's'}` : null,
+                          row.note_count ? `${row.note_count} note${row.note_count === 1 ? '' : 's'}` : null,
+                          row.portfolio_count ? `${row.portfolio_count} portfolio` : null
+                        ].filter(Boolean).join(' · ') || 'No linked activity yet'}
+                      </div>
+                      <div className="tableSubtle">
+                        {row.last_interaction_at ? `Latest touch ${formatDateTime(row.last_interaction_at)}` : 'No interaction history'}
+                      </div>
+                    </td>
+                    <td>
                       {row.contact_count > 0 ? (
                         <span className="badge">{row.contact_count}</span>
                       ) : (
@@ -223,15 +237,15 @@ export default async function OrganizationsPage({ searchParams }: OrganizationsP
                     <td className="tableNote">
                       {reviewMode
                         ? formatReviewFlags(row.review_flags).join(' · ') || 'Needs review'
-                        : row.notes
-                          ? row.notes.length > 80 ? row.notes.slice(0, 80) + '...' : row.notes
+                        : row.description
+                          ? row.description.length > 80 ? row.description.slice(0, 80) + '...' : row.description
                           : '—'}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <EmptyState
                       title="No organizations match the current filters"
                       detail={

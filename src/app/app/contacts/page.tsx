@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { addContactAction, addOrganizationAction } from '@/app/app/actions';
+import { ContactCreateForm } from '@/components/forms/contact-create-form';
+import { OrganizationCreateForm } from '@/components/forms/organization-create-form';
 import { createClient } from '@/lib/supabase/server';
-import { formatDateTime, getContactsPageData } from '@/lib/data/contacts';
+import { formatDateTime, getContactsPageData, matchesContactQuery } from '@/lib/data/contacts';
 
 type ContactsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -12,12 +13,26 @@ function getMessageParam(value: string | string[] | undefined) {
   return value ?? null;
 }
 
+function getParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+}
+
 export default async function ContactsPage({ searchParams }: ContactsPageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const created = getMessageParam(resolvedSearchParams.created);
   const error = getMessageParam(resolvedSearchParams.error);
+  const query = getParam(resolvedSearchParams.q).trim();
+  const organizationFilter = getParam(resolvedSearchParams.organization).trim();
   const supabase = await createClient();
   const data = await getContactsPageData(supabase);
+  const filteredRows = data.rows.filter((row) => {
+    if (organizationFilter) {
+      const matchesOrganization = row.primary_organization?.id === organizationFilter || row.organizations.some((organizationLink) => organizationLink.organization?.id === organizationFilter);
+      if (!matchesOrganization) return false;
+    }
+    if (query && !matchesContactQuery(row, query)) return false;
+    return true;
+  });
 
   return (
     <div className="container">
@@ -26,122 +41,103 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
           <div className="badge">Contacts</div>
           <h1 style={{ margin: '12px 0 8px', fontSize: 36 }}>People and relationship memory</h1>
           <div className="subtle">
-            Default view emphasizes usable people with real identity and contact context. Suspect imports stay available for review below.
+            Real contact rows from Supabase, with faster create flows and direct drill-in editing for both people and organizations.
           </div>
         </div>
-        <div className="buttonRow">
-          <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
-          <Link href="/app/review" className="secondaryButton">Review hidden rows</Link>
-        </div>
+        <div className="badge">Source: {data.source === 'supabase' ? 'Supabase' : 'Empty / fallback'}</div>
       </div>
 
-      {created ? (
-        <div className="successBanner">
-          {created === 'organization' ? 'Organization added.' : 'Person added.'}
-        </div>
-      ) : null}
       {error ? <div className="errorBanner">{error}</div> : null}
 
       <div className="grid grid-4" style={{ marginBottom: 24 }}>
-        <section className="panel"><div className="kpiTitle">Visible contacts</div><div className="kpiValue">{data.visibleContacts}</div><div className="metricNote">{data.hiddenContacts} hidden</div></section>
+        <section className="panel"><div className="kpiTitle">Source contacts</div><div className="kpiValue">{data.totalContacts}</div><div className="metricNote">{data.visibleContacts} visible · {data.hiddenContacts} in review</div></section>
         <section className="panel"><div className="kpiTitle">Linked orgs</div><div className="kpiValue">{data.linkedOrganizations}</div></section>
         <section className="panel"><div className="kpiTitle">With email</div><div className="kpiValue">{data.withEmail}</div></section>
         <section className="panel"><div className="kpiTitle">Added in 30d</div><div className="kpiValue">{data.recentlyAdded}</div></section>
       </div>
 
+      {data.hiddenContacts > 0 ? (
+        <div className="successBanner" style={{ marginBottom: 24 }}>
+          {data.hiddenContacts} contacts are currently suppressed from the working view. They still exist in the source layer and can be inspected in <Link href="/app/review" className="inlineLink">review</Link>.
+        </div>
+      ) : null}
+
       <div className="grid grid-2" style={{ marginBottom: 24 }}>
         <section className="panel">
           <h2 className="sectionTitle">Add person</h2>
-          <form action={addContactAction} className="stack">
-            <div className="formGrid formGrid2">
-              <label className="field">
-                <span>First name</span>
-                <input name="first_name" required />
-              </label>
-              <label className="field">
-                <span>Last name</span>
-                <input name="last_name" required />
-              </label>
-            </div>
-
-            <div className="formGrid formGrid2">
-              <label className="field">
-                <span>Title</span>
-                <input name="job_title" />
-              </label>
-              <label className="field">
-                <span>Email</span>
-                <input name="email" type="email" />
-              </label>
-            </div>
-
-            <label className="field">
-              <span>Organization</span>
-              <select name="organization_id" defaultValue="">
-                <option value="">No organization yet</option>
-                {data.organizationOptions.map((organization) => (
-                  <option key={organization.id} value={organization.id}>
-                    {organization.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>LinkedIn URL</span>
-              <input name="linkedin_url" type="url" />
-            </label>
-
-            <label className="field">
-              <span>Notes</span>
-              <textarea name="notes" rows={4} />
-            </label>
-
-            <div>
-              <button type="submit" className="primaryButton">Add person</button>
-            </div>
-          </form>
+          <div className="subtle" style={{ marginBottom: 16 }}>
+            Capture the essentials first, then land directly on the detail page to keep editing.
+          </div>
+          <ContactCreateForm organizationOptions={data.organizationOptions} />
         </section>
 
         <section className="panel">
           <h2 className="sectionTitle">Add organization</h2>
-          <form action={addOrganizationAction} className="stack">
-            <label className="field">
-              <span>Name</span>
-              <input name="name" required />
-            </label>
-
-            <div className="formGrid formGrid2">
-              <label className="field">
-                <span>Type</span>
-                <input name="organization_type" placeholder="Firm" />
-              </label>
-              <label className="field">
-                <span>HQ</span>
-                <input name="headquarters" />
-              </label>
-            </div>
-
-            <label className="field">
-              <span>Notes</span>
-              <textarea name="notes" rows={6} />
-            </label>
-
-            <div>
-              <button type="submit" className="primaryButton">Add organization</button>
-            </div>
-          </form>
+          <div className="subtle" style={{ marginBottom: 16 }}>
+            Create the firm record with enough context to link contacts immediately.
+          </div>
+          <OrganizationCreateForm />
         </section>
       </div>
+
+      <section className="panel" style={{ marginBottom: 24 }}>
+        <div className="panelHeader">
+          <div>
+            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Recent organizations</h2>
+            <div className="subtle">Shortcut into organization records without leaving the Contacts workspace.</div>
+          </div>
+        </div>
+        <div className="tableWrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Type</th>
+                <th>HQ</th>
+                <th>Channel</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.recentOrganizations.length ? data.recentOrganizations.map((organization) => (
+                <tr key={organization.id}>
+                  <td>
+                    <Link href={`/app/organizations/${organization.id}`} style={{ fontWeight: 700 }}>
+                      {organization.name}
+                    </Link>
+                  </td>
+                  <td>{organization.organization_type ?? '—'}</td>
+                  <td>{organization.headquarters ?? '—'}</td>
+                  <td>{organization.preferred_channel ?? '—'}</td>
+                  <td>{formatDateTime(organization.created_at ?? null)}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={5} className="subtle">No organization rows available yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="panelHeader">
           <div>
-            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Curated contacts</h2>
-            <div className="subtle">Sorted by usable identity, contactability, and linked organization context.</div>
+            <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Recent contacts</h2>
+            <div className="subtle">Search by person, role, org, or contact method.</div>
           </div>
-          <div className="badge">{data.totalContacts} imported total</div>
         </div>
+        <form method="get" action="/app/contacts" className="filterBar" style={{ marginBottom: 16 }}>
+          <input type="text" name="q" placeholder="Search person, org, title, email…" defaultValue={query} className="filterInput" />
+          <select name="organization" defaultValue={organizationFilter} className="filterSelect">
+            <option value="">All organizations</option>
+            {data.organizationOptions.map((organization) => (
+              <option key={organization.id} value={organization.id}>{organization.name}</option>
+            ))}
+          </select>
+          <button type="submit" className="secondaryButton">Filter</button>
+        </form>
         <div className="tableWrap">
           <table className="table">
             <thead>
@@ -156,7 +152,7 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
               </tr>
             </thead>
             <tbody>
-              {data.rows.length ? data.rows.map((row) => {
+              {filteredRows.length ? filteredRows.map((row) => {
                 const organizations = row.organizations
                   .map((organizationLink) => organizationLink.organization?.name)
                   .filter(Boolean)
@@ -172,7 +168,11 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
                       <div className="tableSubtle">{row.linkedin_url ? 'LinkedIn on file' : 'No LinkedIn yet'}</div>
                     </td>
                     <td>
-                      {row.primary_organization?.name ?? '—'}
+                      {row.primary_organization ? (
+                        <Link href={`/app/organizations/${row.primary_organization.id}`} style={{ fontWeight: 600 }}>
+                          {row.primary_organization.name}
+                        </Link>
+                      ) : '—'}
                       <div className="tableSubtle">{organizations || 'No related org links yet'}</div>
                     </td>
                     <td>{row.job_title ?? '—'}</td>
@@ -187,51 +187,13 @@ export default async function ContactsPage({ searchParams }: ContactsPageProps) 
                 );
               }) : (
                 <tr>
-                  <td colSpan={7} className="subtle">No contact rows available yet.</td>
+                  <td colSpan={7} className="subtle">{query || organizationFilter ? 'No contacts match the current filters.' : 'No contact rows available yet.'}</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
-
-      {data.hiddenRows.length ? (
-        <section className="panel" style={{ marginTop: 24 }}>
-          <div className="panelHeader">
-            <div>
-              <h2 className="sectionTitle" style={{ marginBottom: 6 }}>Hidden from default view</h2>
-              <div className="subtle">
-                Rows stay in the app for traceability. Review the most obvious junk before deciding whether to repair the source data.
-              </div>
-            </div>
-            <div className="badge">{data.hiddenRows.length} suspect rows</div>
-          </div>
-
-          <div className="activityList">
-            {data.hiddenRows.slice(0, 12).map(({ row, reasons }) => (
-              <div key={row.id} className="activityItem">
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
-                  <div>
-                    <strong>{row.full_name ?? (`${row.first_name} ${row.last_name ?? ''}`.trim() || 'Unnamed contact')}</strong>
-                    <div className="tableSubtle">{row.email ?? row.primary_organization?.name ?? 'No verified contact context'}</div>
-                  </div>
-                  <Link href={`/app/contacts/${row.id}`} className="secondaryButton">Open</Link>
-                </div>
-                <div className="pillRow">
-                  {reasons.map((reason) => (
-                    <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
-                  ))}
-                </div>
-                <div className="reasonList">
-                  {reasons.map((reason) => (
-                    <div key={`${row.id}-${reason.code}-detail`} className="tableSubtle">{reason.detail}</div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }
