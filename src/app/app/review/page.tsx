@@ -145,7 +145,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     <span key={`${row.id}-${flag}`} className="reasonPill">{flag.replaceAll('_', ' ')}</span>
                   ))}
                 </div>
-                <Link href={`/app/organizations/${row.id}`} className="secondaryButton">Open organization</Link>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  <Link href={`/app/organizations/${row.id}`} className="secondaryButton">Open organization</Link>
+                  <Link href={`/app/contacts?organization=${row.id}`} className="secondaryButton">Linked contacts</Link>
+                  <Link href={`/app/interactions?organization=${row.id}`} className="secondaryButton">Interaction trail</Link>
+                </div>
               </div>
             )) : <div className="activityItem">No hidden organizations{query ? ' match this search.' : '.'}</div>}
           </div>
@@ -165,7 +169,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
                   ))}
                 </div>
-                <Link href={`/app/contacts/${row.id}`} className="secondaryButton">Open contact</Link>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  <Link href={`/app/contacts/${row.id}`} className="secondaryButton">Open contact</Link>
+                  {row.primary_organization ? <Link href={`/app/organizations/${row.primary_organization.id}`} className="secondaryButton">Open organization</Link> : null}
+                  {row.primary_organization ? <Link href={`/app/interactions?organization=${row.primary_organization.id}`} className="secondaryButton">Org interactions</Link> : null}
+                </div>
               </div>
             )) : <div className="activityItem">No hidden contacts{query ? ' match this search.' : '.'}</div>}
           </div>
@@ -182,6 +190,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                   {reasons.map((reason) => (
                     <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
                   ))}
+                </div>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  {row.organization ? <Link href={`/app/organizations/${row.organization.id}`} className="secondaryButton">Open organization</Link> : null}
+                  {row.organization ? <Link href={`/app/fundraising?organization=${row.organization.id}`} className="secondaryButton">Open pipeline</Link> : <Link href="/app/fundraising" className="secondaryButton">Open pipeline</Link>}
+                  {row.organization ? <Link href={`/app/interactions?organization=${row.organization.id}`} className="secondaryButton">Org interactions</Link> : null}
                 </div>
               </div>
             )) : <div className="activityItem">No hidden fundraising rows{query ? ' match this search.' : '.'}</div>}
@@ -202,6 +215,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
                   ))}
                 </div>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  {row.organizations[0]?.organization ? <Link href={`/app/organizations/${row.organizations[0].organization.id}`} className="secondaryButton">Open organization</Link> : null}
+                  {row.organizations[0]?.organization ? <Link href={`/app/interactions?organization=${row.organizations[0].organization.id}`} className="secondaryButton">Org interactions</Link> : <Link href="/app/interactions" className="secondaryButton">Open interactions</Link>}
+                  {row.contacts[0]?.contact ? <Link href={`/app/contacts/${row.contacts[0].contact.id}`} className="secondaryButton">Open contact</Link> : null}
+                </div>
               </div>
             )) : <div className="activityItem">No hidden interactions{query ? ' match this search.' : '.'}</div>}
           </div>
@@ -221,7 +239,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
                   ))}
                 </div>
-                <Link href="/app/notes?view=review" className="secondaryButton">Open notes review</Link>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  <Link href="/app/notes?view=review" className="secondaryButton">Open notes review</Link>
+                  {row.organization ? <Link href={`/app/organizations/${row.organization.id}`} className="secondaryButton">Open organization</Link> : null}
+                  {row.contact ? <Link href={`/app/contacts/${row.contact.id}`} className="secondaryButton">Open contact</Link> : null}
+                </div>
               </div>
             )) : <div className="activityItem">No hidden notes{query ? ' match this search.' : '.'}</div>}
           </div>
@@ -239,7 +261,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
                   ))}
                 </div>
-                <Link href="/app/tasks?view=review" className="secondaryButton">Open tasks review</Link>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  <Link href="/app/tasks?view=review" className="secondaryButton">Open tasks review</Link>
+                  {row.organization ? <Link href={`/app/organizations/${row.organization.id}`} className="secondaryButton">Open organization</Link> : null}
+                  {row.contact ? <Link href={`/app/contacts/${row.contact.id}`} className="secondaryButton">Open contact</Link> : null}
+                </div>
               </div>
             )) : <div className="activityItem">No hidden tasks{query ? ' match this search.' : '.'}</div>}
           </div>
@@ -257,7 +283,10 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     <span key={`${row.id}-${reason.code}`} className="reasonPill">{reason.label}</span>
                   ))}
                 </div>
-                <Link href="/app/portfolio?view=review" className="secondaryButton">Open portfolio review</Link>
+                <div className="contextLinksRow" style={{ marginTop: 10 }}>
+                  <Link href="/app/portfolio?view=review" className="secondaryButton">Open portfolio review</Link>
+                  {row.organization_id ? <Link href={`/app/organizations/${row.organization_id}`} className="secondaryButton">Open organization</Link> : null}
+                </div>
               </div>
             )) : <div className="activityItem">No hidden portfolio rows{query ? ' match this search.' : '.'}</div>}
           </div>
